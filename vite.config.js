@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite';
 
 const tailnetHosts = ['server.dolly-sailfin.ts.net', '.dolly-sailfin.ts.net'];
-const canonicalHost = 'server.dolly-sailfin.ts.net';
+const onVercel = Boolean(process.env.VERCEL);
+const canonicalHost = onVercel ? '' : 'server.dolly-sailfin.ts.net';
 const devPort = 5173;
 const previewPort = 4174;
 

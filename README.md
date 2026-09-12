@@ -23,9 +23,10 @@ npm run preview   # http://localhost:4174
 
 Ports are pinned with `strictPort`, so if the port is taken Vite fails loudly instead
 of silently moving to another one (a different port is a different storage origin).
-When served over the tailnet, the app redirects any other host to the canonical
+When served over the tailnet, a private/Tailscale IP is redirected to the canonical
 MagicDNS name so the storage origin stays stable; add `?nocanonical=1` to the URL to
-skip that redirect.
+skip that redirect. On a public deployment (e.g. Vercel) the redirect is disabled and
+the canonical host is not even baked into the bundle.
 
 Tests for the measurement math:
 

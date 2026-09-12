@@ -1277,17 +1277,30 @@ async function importProject(file) {
   }
 }
 
+function isPrivateIPv4(host) {
+  const match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) return false;
+  const a = Number(match[1]);
+  const b = Number(match[2]);
+  if (a === 10) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true; // Tailscale CGNAT
+  return false;
+}
+
 function canonicalizeOrigin() {
   const canonical = typeof __CANONICAL_HOST__ !== 'undefined' ? __CANONICAL_HOST__ : null;
   if (!canonical) return false;
   const host = window.location.hostname;
-  const local = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0';
+  const local = host === 'localhost' || host === '127.0.0.1' || host === '::1';
   const skip = new URLSearchParams(window.location.search).has('nocanonical');
   if (local || skip || host === canonical) return false;
+  if (!isPrivateIPv4(host)) return false;
   const port = window.location.port ? `:${window.location.port}` : '';
-  window.location.replace(
-    `${window.location.protocol}//${canonical}${port}${window.location.pathname}${window.location.search}${window.location.hash}`,
-  );
+  const target = `${window.location.protocol}//${canonical}${port}${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (target === window.location.href) return false;
+  window.location.replace(target);
   return true;
 }
 
