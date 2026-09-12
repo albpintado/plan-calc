@@ -192,7 +192,7 @@ export async function mountMeasure({ project, save, onExit }) {
       for (const measurement of state.measurements) {
         if (measurement.id !== excludeId) points.push(measurement.a, measurement.b);
       }
-      if (state.calibration) points.push(state.calibration.a, state.calibration.b);
+      if (state.calibration && excludeId !== 'calibration') points.push(state.calibration.a, state.calibration.b);
     }
     if (layerVisible('area')) {
       for (const area of state.areas) points.push(...area.points);
@@ -396,13 +396,39 @@ export async function mountMeasure({ project, save, onExit }) {
   // ---- pointer ----
   function onPointerDown(event, screen, { forcePan }) {
     if (forcePan || state.tool === 'select') {
+      const transform = makeTransform(state.view);
+      const touch = event.pointerType !== 'mouse';
+      const image = transform.toImage(screen);
+
+      if (!forcePan && state.selectedId === 'calibration' && state.calibration) {
+        const a = transform.toScreen(state.calibration.a);
+        const b = transform.toScreen(state.calibration.b);
+        if (distance(screen, a) <= 16) {
+          drag = { mode: 'editCalibration', endpoint: 'a', pointerId: event.pointerId, moved: false, touch };
+          return;
+        }
+        if (distance(screen, b) <= 16) {
+          drag = { mode: 'editCalibration', endpoint: 'b', pointerId: event.pointerId, moved: false, touch };
+          return;
+        }
+        if (distanceToSegment(image, state.calibration.a, state.calibration.b) <= 12 / state.view.scale) {
+          drag = {
+            mode: 'editCalibrationBody',
+            pointerId: event.pointerId,
+            startImage: image,
+            original: { a: { ...state.calibration.a }, b: { ...state.calibration.b } },
+            moved: false,
+            touch,
+          };
+          return;
+        }
+      }
+
       const measurement = typeof state.selectedId === 'number' ? findMeasurement(state.selectedId) : null;
       if (!forcePan && measurement) {
-        const transform = makeTransform(state.view);
         const a = transform.toScreen(measurement.a);
         const b = transform.toScreen(measurement.b);
         const hitRadius = 16;
-        const touch = event.pointerType !== 'mouse';
         if (distance(screen, a) <= hitRadius) {
           drag = { mode: 'edit', id: measurement.id, endpoint: 'a', pointerId: event.pointerId, moved: false, touch };
           return;
@@ -411,7 +437,6 @@ export async function mountMeasure({ project, save, onExit }) {
           drag = { mode: 'edit', id: measurement.id, endpoint: 'b', pointerId: event.pointerId, moved: false, touch };
           return;
         }
-        const image = transform.toImage(screen);
         if (distanceToSegment(image, measurement.a, measurement.b) <= 12 / state.view.scale) {
           drag = {
             mode: 'editBody',
@@ -425,6 +450,32 @@ export async function mountMeasure({ project, save, onExit }) {
           return;
         }
       }
+
+      const area = findArea(state.selectedId);
+      if (!forcePan && area) {
+        for (let index = 0; index < area.points.length; index += 1) {
+          if (distance(screen, transform.toScreen(area.points[index])) <= 14) {
+            drag = { mode: 'editAreaVertex', id: area.id, index, pointerId: event.pointerId, moved: false, touch };
+            return;
+          }
+        }
+        if (
+          pointInPolygon(image, area.points) ||
+          polygonEdgeDistance(image, area.points) <= 12 / state.view.scale
+        ) {
+          drag = {
+            mode: 'dragArea',
+            id: area.id,
+            pointerId: event.pointerId,
+            startImage: image,
+            original: area.points.map((point) => ({ ...point })),
+            moved: false,
+            touch,
+          };
+          return;
+        }
+      }
+
       drag = {
         mode: 'pan',
         pointerId: event.pointerId,
@@ -514,6 +565,75 @@ export async function mountMeasure({ project, save, onExit }) {
       return;
     }
 
+    if (drag.mode === 'editCalibration') {
+      if (!state.calibration) return;
+      const other = drag.endpoint === 'a' ? state.calibration.b : state.calibration.a;
+      const result = resolvePoint(screen, other, event.shiftKey, 'calibration');
+      if (!drag.moved) {
+        pushHistory();
+        drag.moved = true;
+      }
+      state.calibration[drag.endpoint] = result.point;
+      state.calibration.pxPerMeter = computePxPerMeter(
+        state.calibration.a,
+        state.calibration.b,
+        state.calibration.realMeters,
+      );
+      state.snap = result.snapped ? result.point : null;
+      controller.requestRender();
+      syncUI();
+      if (drag.touch) controller.updateLoupe(screen, result.point);
+      return;
+    }
+
+    if (drag.mode === 'editCalibrationBody') {
+      if (!state.calibration) return;
+      const image = makeTransform(state.view).toImage(screen);
+      const dx = image.x - drag.startImage.x;
+      const dy = image.y - drag.startImage.y;
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 0) {
+        pushHistory();
+        drag.moved = true;
+      }
+      state.calibration.a = { x: drag.original.a.x + dx, y: drag.original.a.y + dy };
+      state.calibration.b = { x: drag.original.b.x + dx, y: drag.original.b.y + dy };
+      controller.requestRender();
+      syncUI();
+      return;
+    }
+
+    if (drag.mode === 'editAreaVertex') {
+      const area = findArea(drag.id);
+      if (!area) return;
+      const result = resolvePoint(screen, null, event.shiftKey);
+      if (!drag.moved) {
+        pushHistory();
+        drag.moved = true;
+      }
+      area.points[drag.index] = result.point;
+      state.snap = result.snapped ? result.point : null;
+      controller.requestRender();
+      syncUI();
+      if (drag.touch) controller.updateLoupe(screen, result.point);
+      return;
+    }
+
+    if (drag.mode === 'dragArea') {
+      const area = findArea(drag.id);
+      if (!area) return;
+      const image = makeTransform(state.view).toImage(screen);
+      const dx = image.x - drag.startImage.x;
+      const dy = image.y - drag.startImage.y;
+      if (!drag.moved && (Math.abs(dx) > 0 || Math.abs(dy) > 0)) {
+        pushHistory();
+        drag.moved = true;
+      }
+      area.points = drag.original.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+      controller.requestRender();
+      syncUI();
+      return;
+    }
+
     if (drag.mode === 'area' || drag.mode === 'pan') {
       const dx = screen.x - drag.startScreen.x;
       const dy = screen.y - drag.startScreen.y;
@@ -541,7 +661,16 @@ export async function mountMeasure({ project, save, onExit }) {
     drag = null;
     els.canvas.style.cursor = state.tool === 'select' ? 'grab' : 'crosshair';
 
-    if (finished.mode === 'edit' || finished.mode === 'editBody') {
+    if (
+      [
+        'edit',
+        'editBody',
+        'editCalibration',
+        'editCalibrationBody',
+        'editAreaVertex',
+        'dragArea',
+      ].includes(finished.mode)
+    ) {
       state.snap = null;
       afterChange();
       return;

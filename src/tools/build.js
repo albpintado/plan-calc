@@ -490,32 +490,78 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
       if (selected?.kind === 'wall' && !forcePan) {
         const wall = findWall(selected.id);
         const ends = wall ? wallEnds(wall) : null;
-        if (ends && distanceToSegment(image, ends.a, ends.b) <= 12 / state.view.scale) {
-          drag = {
-            mode: 'dragWall',
-            id: wall.id,
-            pointerId: event.pointerId,
-            startImage: image,
-            original: { a: { x: ends.a.x, y: ends.a.y }, b: { x: ends.b.x, y: ends.b.y } },
-            moved: false,
-            touch,
-          };
-          return;
+        if (ends) {
+          if (distance(screen, transform.toScreen(ends.a)) <= 16) {
+            drag = { mode: 'dragNode', id: ends.a.id, pointerId: event.pointerId, moved: false, touch };
+            return;
+          }
+          if (distance(screen, transform.toScreen(ends.b)) <= 16) {
+            drag = { mode: 'dragNode', id: ends.b.id, pointerId: event.pointerId, moved: false, touch };
+            return;
+          }
+          if (distanceToSegment(image, ends.a, ends.b) <= 12 / state.view.scale) {
+            drag = {
+              mode: 'dragWall',
+              id: wall.id,
+              pointerId: event.pointerId,
+              startImage: image,
+              original: { a: { x: ends.a.x, y: ends.a.y }, b: { x: ends.b.x, y: ends.b.y } },
+              moved: false,
+              touch,
+            };
+            return;
+          }
         }
       }
       if (selected?.kind === 'opening' && !forcePan) {
         const opening = findOpening(selected.id);
-        if (opening && distanceToSegment(image, opening.a, opening.b) <= 12 / state.view.scale) {
-          drag = {
-            mode: 'dragOpening',
-            id: opening.id,
-            pointerId: event.pointerId,
-            startImage: image,
-            original: { a: { ...opening.a }, b: { ...opening.b } },
-            moved: false,
-            touch,
-          };
-          return;
+        if (opening) {
+          if (distance(screen, transform.toScreen(opening.a)) <= 16) {
+            drag = { mode: 'editOpeningVertex', id: opening.id, endpoint: 'a', pointerId: event.pointerId, moved: false, touch };
+            return;
+          }
+          if (distance(screen, transform.toScreen(opening.b)) <= 16) {
+            drag = { mode: 'editOpeningVertex', id: opening.id, endpoint: 'b', pointerId: event.pointerId, moved: false, touch };
+            return;
+          }
+          if (distanceToSegment(image, opening.a, opening.b) <= 12 / state.view.scale) {
+            drag = {
+              mode: 'dragOpening',
+              id: opening.id,
+              pointerId: event.pointerId,
+              startImage: image,
+              original: { a: { ...opening.a }, b: { ...opening.b } },
+              moved: false,
+              touch,
+            };
+            return;
+          }
+        }
+      }
+      if (selected?.kind === 'room' && !forcePan) {
+        const room = findRoom(selected.id);
+        if (room) {
+          for (let index = 0; index < room.points.length; index += 1) {
+            if (distance(screen, transform.toScreen(room.points[index])) <= 14) {
+              drag = { mode: 'editRoomVertex', id: room.id, index, pointerId: event.pointerId, moved: false, touch };
+              return;
+            }
+          }
+          if (
+            pointInPolygon(image, room.points) ||
+            polygonEdgeDistance(image, room.points) <= 12 / state.view.scale
+          ) {
+            drag = {
+              mode: 'dragRoom',
+              id: room.id,
+              pointerId: event.pointerId,
+              startImage: image,
+              original: room.points.map((point) => ({ ...point })),
+              moved: false,
+              touch,
+            };
+            return;
+          }
         }
       }
       drag = {
@@ -618,6 +664,52 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
       return;
     }
 
+    if (drag.mode === 'editOpeningVertex') {
+      const opening = findOpening(drag.id);
+      if (!opening) return;
+      const other = drag.endpoint === 'a' ? opening.b : opening.a;
+      const result = resolvePoint(screen, other, event.shiftKey);
+      if (!drag.moved) {
+        pushHistory();
+        drag.moved = true;
+      }
+      opening[drag.endpoint] = result.point;
+      state.snap = result.snapped ? result.point : null;
+      controller.requestRender();
+      syncUI();
+      return;
+    }
+
+    if (drag.mode === 'editRoomVertex') {
+      const room = findRoom(drag.id);
+      if (!room) return;
+      const result = resolvePoint(screen, null, event.shiftKey);
+      if (!drag.moved) {
+        pushHistory();
+        drag.moved = true;
+      }
+      room.points[drag.index] = result.point;
+      state.snap = result.snapped ? result.point : null;
+      controller.requestRender();
+      syncUI();
+      return;
+    }
+
+    if (drag.mode === 'dragRoom') {
+      const room = findRoom(drag.id);
+      if (!room) return;
+      const dx = image.x - drag.startImage.x;
+      const dy = image.y - drag.startImage.y;
+      if (!drag.moved && (Math.abs(dx) > 0 || Math.abs(dy) > 0)) {
+        pushHistory();
+        drag.moved = true;
+      }
+      room.points = drag.original.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+      controller.requestRender();
+      syncUI();
+      return;
+    }
+
     if (drag.mode === 'room' || drag.mode === 'pan') {
       const dx = screen.x - drag.startScreen.x;
       const dy = screen.y - drag.startScreen.y;
@@ -641,7 +733,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     drag = null;
     els.canvas.style.cursor = state.tool === 'select' ? 'grab' : 'crosshair';
 
-    if (finished.mode.startsWith('drag')) {
+    if (finished.mode.startsWith('drag') || finished.mode.startsWith('edit')) {
       state.snap = null;
       if (finished.moved) afterChange();
       else controller.requestRender();

@@ -294,6 +294,21 @@ function drawEditHandles(ctx, transform, measurement) {
   ctx.restore();
 }
 
+function drawPolygonHandles(ctx, transform, points) {
+  ctx.save();
+  for (const point of points) {
+    const p = transform.toScreen(point);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.areaActive;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawScaleBar(ctx, state, canvasHeight) {
   if (!state.calibration) return;
   const bar = niceScaleBar(state.calibration.pxPerMeter * state.view.scale, 140);
@@ -445,6 +460,12 @@ export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
     if (wall && layers.wall) drawEditHandles(ctx, transform, wall);
     const opening = (state.openings || []).find((o) => o.id === state.selectedId);
     if (opening && layers.opening) drawEditHandles(ctx, transform, opening);
+    const area = state.areas.find((a) => a.id === state.selectedId);
+    if (area && layers.area) drawPolygonHandles(ctx, transform, area.points);
+  }
+
+  if (layers.measure && state.selectedId === 'calibration' && state.calibration) {
+    drawEditHandles(ctx, transform, state.calibration);
   }
 
   if (state.snap) {
