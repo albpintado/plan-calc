@@ -728,7 +728,8 @@ function cancelArea() {
 }
 
 function handleAreaTap(screen) {
-  const result = resolvePoint(screen, null, false);
+  const previous = state.areaDraft[state.areaDraft.length - 1] || null;
+  const result = resolvePoint(screen, previous, false);
   const point = result.point;
   if (!state.areaDraft.length) {
     state.areaDraft = [point];
@@ -1001,7 +1002,8 @@ function onPointerMove(event) {
       state.snap = result.snapped ? result.point : null;
       requestRender();
     } else if (state.tool === 'area') {
-      const result = resolvePoint(screen, null, event.shiftKey);
+      const previous = state.areaDraft[state.areaDraft.length - 1] || null;
+      const result = resolvePoint(screen, previous, event.shiftKey);
       state.areaCursor = result.point;
       state.snap = result.snapped ? result.point : null;
       requestRender();
