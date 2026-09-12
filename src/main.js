@@ -110,14 +110,19 @@ function setToolButtons(tool) {
   }
 }
 
+// Only the active tool's toolbar and panel may be visible.
+function hideToolChrome() {
+  for (const id of ['measurePanel', 'buildPanel', 'measureToolbar', 'buildToolbar']) {
+    const element = document.getElementById(id);
+    if (element) element.hidden = true;
+  }
+}
+
 async function mountTool(tool) {
   if (!current) return;
   if (current.tool === tool) return;
   current.instance?.destroy();
-  document.getElementById('measurePanel').hidden = true;
-  document.getElementById('buildPanel').hidden = true;
-  document.getElementById('measureToolbar').hidden = true;
-  document.getElementById('buildToolbar').hidden = true;
+  hideToolChrome();
   current.tool = tool;
   const api =
     tool === 'measure'
@@ -147,6 +152,7 @@ async function openProject(id, tool) {
     workspace.hidden = false;
     document.body.classList.add('in-workspace');
     document.body.classList.add('panel-hidden');
+    hideToolChrome();
     projectTitle.textContent = project.name;
     current = { project, tool: null, instance: null };
     current.tool = tool;
