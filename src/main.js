@@ -19,7 +19,7 @@ import {
 import { fitView, makeTransform } from './viewport.js';
 import { render } from './render.js';
 import { createSource, goToPage, releaseSource } from './source.js';
-import { loadState, saveState } from './persistence.js';
+import { loadState, saveState, closeState } from './persistence.js';
 
 const els = {
   canvas: document.getElementById('canvas'),
@@ -106,6 +106,7 @@ let frame = 0;
 let zoomFrame = 0;
 let zoomGoal = null;
 let saveTimer = null;
+let pendingSave = Promise.resolve();
 let statusTimer = null;
 
 function currentPageKey() {
@@ -284,25 +285,25 @@ function flushSave() {
     saveTimer = null;
     persist();
   }
+  return pendingSave.finally(closeState);
 }
 
-async function persist() {
-  if (!state.source || !state.source.blob) return;
+function persist() {
+  if (!state.source || !state.source.blob) return pendingSave;
   stashCurrentPage();
-  try {
-    await saveState({
-      version: 1,
-      kind: state.source.kind,
-      name: state.source.name,
-      page: state.source.page,
-      sourceBlob: state.source.blob,
-      view: state.view,
-      snapLines: state.snapLines,
-      pages: [...pageStore.entries()],
-    });
-  } catch (error) {
-    console.warn('persist failed', error);
-  }
+  pendingSave = saveState({
+    version: 1,
+    kind: state.source.kind,
+    name: state.source.name,
+    page: state.source.page,
+    sourceBlob: state.source.blob,
+    view: state.view,
+    snapLines: state.snapLines,
+    pages: [...pageStore.entries()],
+  }).catch((error) => {
+    console.warn('persist failed', error && (error.message || error), error);
+  });
+  return pendingSave;
 }
 
 function stashCurrentPage() {
@@ -1212,16 +1213,36 @@ async function applySavedState(saved) {
   afterChange();
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function restore() {
   showLoading('Loading project…');
   try {
     const saved = await loadState();
     if (!saved || !saved.sourceBlob) return;
-    await applySavedState(saved);
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await applySavedState(saved);
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (state.source) {
+          releaseSource(state.source);
+          state.source = null;
+        }
+        await wait(150 * (attempt + 1));
+      }
+    }
+    if (lastError) throw lastError;
     toast('Restored last session');
   } catch (error) {
-    console.warn('restore failed', error);
-    toast('Could not restore the last session', true);
+    const detail = error && (error.message || error.name);
+    console.warn('restore failed', detail, error);
+    toast(detail ? `Could not restore the last session: ${detail}` : 'Could not restore the last session', true);
   } finally {
     hideLoading();
   }
