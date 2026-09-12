@@ -36,7 +36,10 @@ last-edited time.
    add up to the **Useful area**; `Measurement` polygons are free areas. Each row can be
    named and re-typed.
 4. **Summary** — measured/useful area by room type, **Export CSV** and **Export PNG**.
-5. **Project → Export/Import file** — a `.json` backup of the whole project.
+5. **Edit** — with the Pan tool, select a dimension and drag its ends/body, or select a
+   **space** and drag it as a whole or by its vertices; the **calibration line** can also be
+   dragged by its ends or body.
+6. **Project → Export/Import file** — a `.json` backup of the whole project.
 
 ## Build tool
 
@@ -46,7 +49,9 @@ Draws over the plan (or a blank sheet) and keeps a small **model**:
   together. Type and thickness (mm) come from the Walls panel.
 - **Opening** (key `4`) — drag a door/window width.
 - **Room** (key `5`) — tap a polygon, name it and type it.
-- **Pan** (key `1`) — select; drag a node, a wall or an opening to edit it.
+- **Pan** (key `1`) — select; drag an element to move it, or drag a node/wall/vertex/opening
+  handle to edit it. Walls share **nodes**, so dragging a corner moves every wall that meets
+  there.
 - **Quantities** — useful area, wall footprint, built area (estimated = useful + wall
   footprint), wall length and opening count, with **Export CSV**.
 
