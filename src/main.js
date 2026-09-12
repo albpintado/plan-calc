@@ -1220,16 +1220,18 @@ function wait(ms) {
 async function restore() {
   showLoading('Loading project…');
   try {
-    const saved = await loadState();
-    if (!saved || !saved.sourceBlob) return;
     let lastError = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      let phase = 'load';
       try {
+        const saved = await loadState();
+        if (!saved || !saved.sourceBlob) return;
+        phase = 'apply';
         await applySavedState(saved);
         lastError = null;
         break;
       } catch (error) {
-        lastError = error;
+        lastError = new Error(`${phase} (${error.name || 'Error'}): ${error.message}`);
         if (state.source) {
           releaseSource(state.source);
           state.source = null;
@@ -1240,9 +1242,9 @@ async function restore() {
     if (lastError) throw lastError;
     toast('Restored last session');
   } catch (error) {
-    const detail = error && (error.message || error.name);
+    const detail = error && error.message;
     console.warn('restore failed', detail, error);
-    toast(detail ? `Could not restore the last session: ${detail}` : 'Could not restore the last session', true);
+    toast(detail ? `Could not restore: ${detail}` : 'Could not restore the last session', true);
   } finally {
     hideLoading();
   }

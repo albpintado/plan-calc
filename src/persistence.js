@@ -101,18 +101,10 @@ function runTransaction(db, mode, run) {
   });
 }
 
-// WebKit (all iOS browsers, including Brave) regularly drops the IndexedDB
-// connection across reloads and aborts the transaction with a retryable error.
-function isTransient(error) {
-  if (!error) return false;
-  if (['InvalidStateError', 'AbortError', 'UnknownError', 'TimeoutError'].includes(error.name)) {
-    return true;
-  }
-  return /indexed database server lost|connection is closing|transaction.*abort/i.test(
-    error.message || '',
-  );
-}
-
+// WebKit (all iOS browsers, including Brave) drops the IndexedDB connection
+// across reloads and reports it as a variety of errors, including
+// NotFoundError ("The object can not be found here"). Retry every failure with
+// a fresh connection instead of trying to whitelist transient error names.
 async function withStore(mode, run) {
   let lastError;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
@@ -122,7 +114,6 @@ async function withStore(mode, run) {
     } catch (error) {
       lastError = error;
       resetDb();
-      if (!isTransient(error) && attempt >= 1) break;
       await delay(RETRY_DELAY_MS * (attempt + 1));
     }
   }
