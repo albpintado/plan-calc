@@ -18,14 +18,32 @@ Production build (still fully local):
 
 ```bash
 npm run build
-npm run preview
+npm run preview   # http://localhost:4174
 ```
+
+Ports are pinned with `strictPort`, so if the port is taken Vite fails loudly instead
+of silently moving to another one (a different port is a different storage origin).
+When served over the tailnet, the app redirects any other host to the canonical
+MagicDNS name so the storage origin stays stable; add `?nocanonical=1` to the URL to
+skip that redirect.
 
 Tests for the measurement math:
 
 ```bash
 npm test
 ```
+
+## Projects and persistence
+
+Everything is saved automatically in **IndexedDB** (base `plan-calc`): the uploaded
+file, the view, and, per page, the calibration, dimensions and areas. Nothing is
+uploaded.
+
+IndexedDB is tied to the exact **origin** (`scheme://host:port`) and to the browser
+profile, so the same project is only visible from the same URL and the same device.
+To move it — or to keep a backup — use **Project → Export file** and **Import file**
+(a `.json` containing the plan and all annotations). The panel also shows the address
+the project is saved for.
 
 ## Workflow
 

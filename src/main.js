@@ -51,6 +51,10 @@ const els = {
   knownValue: document.getElementById('knownValue'),
   knownUnit: document.getElementById('knownUnit'),
   knownSet: document.getElementById('knownSet'),
+  originLabel: document.getElementById('originLabel'),
+  exportProject: document.getElementById('exportProject'),
+  importProject: document.getElementById('importProject'),
+  projectInput: document.getElementById('projectInput'),
   measurementList: document.getElementById('measurementList'),
   measureCount: document.getElementById('measureCount'),
   totalRow: document.getElementById('totalRow'),
@@ -1169,27 +1173,122 @@ function syncUI() {
   els.exportBtn.disabled = !state.source;
 }
 
+async function applySavedState(saved) {
+  const file = new File([saved.sourceBlob], saved.name || 'plan', {
+    type: saved.sourceBlob.type || '',
+  });
+  let source = await createSource(file);
+  if (saved.kind === 'pdf' && saved.page > 1) source = await goToPage(source, saved.page);
+  if (state.source) releaseSource(state.source);
+  state.source = source;
+  pageStore.clear();
+  for (const [page, annotations] of saved.pages || []) pageStore.set(page, annotations);
+  state.view = saved.view || { scale: 1, tx: 0, ty: 0 };
+  state.snapLines = saved.snapLines ?? false;
+  history.length = 0;
+  loadPageAnnotations();
+  afterChange();
+}
+
 async function restore() {
   try {
     const saved = await loadState();
     if (!saved || !saved.sourceBlob) return;
-    const file = new File([saved.sourceBlob], saved.name || 'plan', {
-      type: saved.sourceBlob.type || '',
-    });
-    let source = await createSource(file);
-    if (saved.kind === 'pdf' && saved.page > 1) source = await goToPage(source, saved.page);
-    state.source = source;
-    pageStore.clear();
-    for (const [page, annotations] of saved.pages || []) pageStore.set(page, annotations);
-    state.view = saved.view || { scale: 1, tx: 0, ty: 0 };
-    state.snapLines = saved.snapLines ?? false;
-    loadPageAnnotations();
-    requestRender();
-    syncUI();
+    await applySavedState(saved);
     toast('Restored last session');
   } catch (error) {
     console.warn('restore failed', error);
   }
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+function dataUrlToBlob(dataUrl) {
+  const comma = dataUrl.indexOf(',');
+  const meta = dataUrl.slice(0, comma);
+  const data = dataUrl.slice(comma + 1);
+  const type = (meta.match(/data:([^;]+)/) || [])[1] || 'application/octet-stream';
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type });
+}
+
+async function exportProject() {
+  if (!state.source || !state.source.blob) {
+    toast('Nothing to export', true);
+    return;
+  }
+  stashCurrentPage();
+  try {
+    const dataUrl = await blobToDataUrl(state.source.blob);
+    const payload = {
+      format: 'plan-calc-project',
+      version: 1,
+      kind: state.source.kind,
+      name: state.source.name,
+      page: state.source.page,
+      view: state.view,
+      snapLines: state.snapLines,
+      pages: [...pageStore.entries()],
+      source: { type: state.source.blob.type, data: dataUrl },
+    };
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${(state.source.name || 'plan').replace(/\.[^.]+$/, '')}.plan-calc.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('Project exported');
+  } catch (error) {
+    console.error(error);
+    toast('Could not export the project', true);
+  }
+}
+
+async function importProject(file) {
+  try {
+    toast('Importing…');
+    const payload = JSON.parse(await file.text());
+    if (!payload || payload.format !== 'plan-calc-project' || !payload.source?.data) {
+      throw new Error('Not a plan-calc project file');
+    }
+    await applySavedState({
+      kind: payload.kind,
+      name: payload.name,
+      page: payload.page,
+      view: payload.view,
+      snapLines: payload.snapLines,
+      pages: payload.pages,
+      sourceBlob: dataUrlToBlob(payload.source.data),
+    });
+    toast('Project imported');
+  } catch (error) {
+    console.error(error);
+    toast('Could not import that file', true);
+  }
+}
+
+function canonicalizeOrigin() {
+  const canonical = typeof __CANONICAL_HOST__ !== 'undefined' ? __CANONICAL_HOST__ : null;
+  if (!canonical) return false;
+  const host = window.location.hostname;
+  const local = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0';
+  const skip = new URLSearchParams(window.location.search).has('nocanonical');
+  if (local || skip || host === canonical) return false;
+  const port = window.location.port ? `:${window.location.port}` : '';
+  window.location.replace(
+    `${window.location.protocol}//${canonical}${port}${window.location.pathname}${window.location.search}${window.location.hash}`,
+  );
+  return true;
 }
 
 function setPanelVisible(visible) {
@@ -1227,6 +1326,14 @@ function bindEvents() {
   els.knownSet.addEventListener('click', setScaleFromSelected);
   els.knownValue.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') setScaleFromSelected();
+  });
+
+  els.exportProject.addEventListener('click', exportProject);
+  els.importProject.addEventListener('click', () => els.projectInput.click());
+  els.projectInput.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    if (file) importProject(file);
+    event.target.value = '';
   });
 
   els.snapToggle.addEventListener('click', () => setSnapLines(!state.snapLines));
@@ -1310,9 +1417,11 @@ function bindEvents() {
 }
 
 function init() {
+  if (canonicalizeOrigin()) return;
   bindEvents();
   resize();
   els.canvas.style.cursor = 'grab';
+  els.originLabel.textContent = window.location.host;
   setPanelVisible(false);
   syncUI();
   restore();

@@ -96,6 +96,20 @@
           </section>
 
           <section>
+            <h2>Project</h2>
+            <div class="panel-actions">
+              <button id="exportProject" class="ghost small">Export file</button>
+              <button id="importProject" class="ghost small">Import file</button>
+            </div>
+            <input id="projectInput" type="file" accept="application/json,.json" hidden />
+            <p class="hint">
+              A <b>.json</b> with the plan and all annotations, to back up or move to another
+              device or address.
+            </p>
+            <p class="hint">Saved for this address: <b id="originLabel">–</b></p>
+          </section>
+
+          <section>
             <h2>Help</h2>
             <ul class="help">
               <li><b>Drag</b> — draw a dimension</li>
