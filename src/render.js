@@ -263,6 +263,7 @@ function drawEmptyState(ctx, width, height) {
 
 export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
   const { background = COLORS.background, showScaleBar = true } = options;
+  const layers = state.layerVisibility || { measure: true, area: true };
   ctx.save();
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
@@ -299,48 +300,54 @@ export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
     );
   }
 
-  for (const area of state.areas) {
-    const selected = area.id === state.selectedId;
-    drawArea(ctx, transform, area.points, {
-      stroke: selected ? COLORS.areaActive : COLORS.area,
-      fill: selected ? COLORS.areaActiveFill : COLORS.areaFill,
-      label: areaText(area.points, state.calibration),
-    });
+  if (layers.area) {
+    for (const area of state.areas) {
+      const selected = area.id === state.selectedId;
+      drawArea(ctx, transform, area.points, {
+        stroke: selected ? COLORS.areaActive : COLORS.area,
+        fill: selected ? COLORS.areaActiveFill : COLORS.areaFill,
+        label: areaText(area.points, state.calibration),
+      });
+    }
   }
 
-  for (const measurement of state.measurements) {
-    const selected = measurement.id === state.selectedId;
-    const color = selected ? COLORS.measureActive : COLORS.measure;
-    const mm = pxToMm(distance(measurement.a, measurement.b), state.calibration?.pxPerMeter);
-    const text = state.calibration ? formatDimension(mm) : 'no scale';
-    drawSegment(ctx, transform, measurement.a, measurement.b, color, text, false, 16);
+  if (layers.measure) {
+    for (const measurement of state.measurements) {
+      const selected = measurement.id === state.selectedId;
+      const color = selected ? COLORS.measureActive : COLORS.measure;
+      const mm = pxToMm(distance(measurement.a, measurement.b), state.calibration?.pxPerMeter);
+      const text = state.calibration ? formatDimension(mm) : 'no scale';
+      drawSegment(ctx, transform, measurement.a, measurement.b, color, text, false, 16);
+    }
+
+    if (state.calibration) {
+      const cal = state.calibration;
+      const color = state.selectedId === 'calibration' ? COLORS.measureActive : COLORS.calibration;
+      drawSegment(
+        ctx,
+        transform,
+        cal.a,
+        cal.b,
+        color,
+        `${formatLength(cal.value, cal.unit)} · scale`,
+        true,
+        22,
+      );
+    }
+
+    if (state.preview) {
+      const { a, b } = state.preview;
+      const mm = pxToMm(distance(a, b), state.calibration?.pxPerMeter);
+      const text = state.calibration ? formatDimension(mm) : 'set scale first';
+      drawSegment(ctx, transform, a, b, COLORS.preview, text, true, 16);
+    }
   }
 
-  if (state.calibration) {
-    const cal = state.calibration;
-    const color = state.selectedId === 'calibration' ? COLORS.measureActive : COLORS.calibration;
-    drawSegment(
-      ctx,
-      transform,
-      cal.a,
-      cal.b,
-      color,
-      `${formatLength(cal.value, cal.unit)} · scale`,
-      true,
-      22,
-    );
+  if (layers.area) {
+    drawAreaDraft(ctx, transform, state.areaDraft || [], state.areaCursor, state.calibration);
   }
 
-  if (state.preview) {
-    const { a, b } = state.preview;
-    const mm = pxToMm(distance(a, b), state.calibration?.pxPerMeter);
-    const text = state.calibration ? formatDimension(mm) : 'set scale first';
-    drawSegment(ctx, transform, a, b, COLORS.preview, text, true, 16);
-  }
-
-  drawAreaDraft(ctx, transform, state.areaDraft || [], state.areaCursor, state.calibration);
-
-  if (typeof state.selectedId === 'number') {
+  if (layers.measure && typeof state.selectedId === 'number') {
     const selectedMeasurement = state.measurements.find((m) => m.id === state.selectedId);
     if (selectedMeasurement) drawEditHandles(ctx, transform, selectedMeasurement);
   }
@@ -360,6 +367,6 @@ export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
     ctx.restore();
   }
 
-  if (showScaleBar) drawScaleBar(ctx, state, canvasHeight);
+  if (showScaleBar && layers.measure) drawScaleBar(ctx, state, canvasHeight);
   ctx.restore();
 }

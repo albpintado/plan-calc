@@ -20,6 +20,7 @@ import { fitView, makeTransform } from './viewport.js';
 import { render } from './render.js';
 import { createSource, goToPage, releaseSource } from './source.js';
 import { loadState, saveState, closeState } from './persistence.js';
+import { DEFAULT_LAYER_VISIBILITY, isLayerVisible, resolveLayerVisibility } from './layers.js';
 
 const els = {
   canvas: document.getElementById('canvas'),
@@ -46,7 +47,12 @@ const els = {
   fitBtn: document.getElementById('fitBtn'),
   undoBtn: document.getElementById('undoBtn'),
   deleteBtn: document.getElementById('deleteBtn'),
-  clearBtn: document.getElementById('clearBtn'),
+  clearMeasureBtn: document.getElementById('clearMeasureBtn'),
+  clearAreaBtn: document.getElementById('clearAreaBtn'),
+  layerMeasureToggle: document.getElementById('layerMeasureToggle'),
+  layerAreaToggle: document.getElementById('layerAreaToggle'),
+  measureSection: document.getElementById('measureSection'),
+  areaSection: document.getElementById('areaSection'),
   exportBtn: document.getElementById('exportBtn'),
   calibrateStatus: document.getElementById('calibrateStatus'),
   resetCalibration: document.getElementById('resetCalibration'),
@@ -90,6 +96,7 @@ const state = {
   areaCursor: null,
   tool: 'select',
   snapLines: false,
+  layerVisibility: { ...DEFAULT_LAYER_VISIBILITY },
 };
 
 const pageStore = new Map();
@@ -111,6 +118,10 @@ let statusTimer = null;
 
 function currentPageKey() {
   return state.source && state.source.kind === 'pdf' ? state.source.page : 1;
+}
+
+function layerVisible(layer) {
+  return isLayerVisible(state.layerVisibility, layer);
 }
 
 function snapshot() {
@@ -299,6 +310,7 @@ function persist() {
     sourceType: state.source.blob.type || '',
     view: state.view,
     snapLines: state.snapLines,
+    layers: state.layerVisibility,
     pages: [...pageStore.entries()],
   };
   // Store raw bytes as an ArrayBuffer. WebKit can evict the backing file of a
@@ -353,21 +365,27 @@ function getScreenPoint(event) {
 
 function snapPoints(excludeId = null) {
   const points = [];
-  for (const measurement of state.measurements) {
-    if (measurement.id !== excludeId) points.push(measurement.a, measurement.b);
+  if (layerVisible('measure')) {
+    for (const measurement of state.measurements) {
+      if (measurement.id !== excludeId) points.push(measurement.a, measurement.b);
+    }
+    if (state.calibration) points.push(state.calibration.a, state.calibration.b);
   }
-  for (const area of state.areas) points.push(...area.points);
-  points.push(...state.areaDraft);
-  if (state.calibration) points.push(state.calibration.a, state.calibration.b);
+  if (layerVisible('area')) {
+    for (const area of state.areas) points.push(...area.points);
+    points.push(...state.areaDraft);
+  }
   return points;
 }
 
 function referenceDirections(excludeId = null) {
   const directions = [0, Math.PI / 2];
-  for (const measurement of state.measurements) {
-    if (measurement.id !== excludeId) directions.push(segmentAngle(measurement.a, measurement.b));
+  if (layerVisible('measure')) {
+    for (const measurement of state.measurements) {
+      if (measurement.id !== excludeId) directions.push(segmentAngle(measurement.a, measurement.b));
+    }
+    if (state.calibration) directions.push(segmentAngle(state.calibration.a, state.calibration.b));
   }
-  if (state.calibration) directions.push(segmentAngle(state.calibration.a, state.calibration.b));
   return directions;
 }
 
@@ -431,22 +449,26 @@ function selectAt(imagePoint) {
   const tolerance = 8 / state.view.scale;
   let selected = null;
   let bestDistance = tolerance;
-  for (const measurement of state.measurements) {
-    const d = distanceToSegment(imagePoint, measurement.a, measurement.b);
-    if (d <= bestDistance) {
-      bestDistance = d;
-      selected = measurement.id;
+  if (layerVisible('measure')) {
+    for (const measurement of state.measurements) {
+      const d = distanceToSegment(imagePoint, measurement.a, measurement.b);
+      if (d <= bestDistance) {
+        bestDistance = d;
+        selected = measurement.id;
+      }
     }
   }
-  for (const area of state.areas) {
-    const d = polygonEdgeDistance(imagePoint, area.points);
-    const inside = pointInPolygon(imagePoint, area.points);
-    if (inside || d <= bestDistance) {
-      bestDistance = inside ? 0 : d;
-      selected = area.id;
+  if (layerVisible('area')) {
+    for (const area of state.areas) {
+      const d = polygonEdgeDistance(imagePoint, area.points);
+      const inside = pointInPolygon(imagePoint, area.points);
+      if (inside || d <= bestDistance) {
+        bestDistance = inside ? 0 : d;
+        selected = area.id;
+      }
     }
   }
-  if (state.calibration) {
+  if (layerVisible('measure') && state.calibration) {
     const d = distanceToSegment(imagePoint, state.calibration.a, state.calibration.b);
     if (d <= bestDistance) {
       bestDistance = d;
@@ -485,12 +507,39 @@ function confirmDelete() {
   afterChange();
 }
 
-function clearAnnotations() {
-  if (!state.measurements.length && !state.areas.length) return;
+function clearLayerSelection(layer) {
+  if (layer === 'measure' && (state.selectedId === 'calibration' || findMeasurement(state.selectedId))) {
+    state.selectedId = null;
+  }
+  if (layer === 'area' && findArea(state.selectedId)) {
+    state.selectedId = null;
+  }
+}
+
+function setLayerVisible(layer, visible) {
+  if (layerVisible(layer) === visible) return;
+  state.layerVisibility = { ...state.layerVisibility, [layer]: visible };
+  if (!visible) clearLayerSelection(layer);
+  afterChange();
+}
+
+function toggleLayer(layer) {
+  setLayerVisible(layer, !layerVisible(layer));
+}
+
+function clearMeasurements() {
+  if (!state.measurements.length) return;
   pushHistory();
   state.measurements = [];
+  if (findMeasurement(state.selectedId)) state.selectedId = null;
+  afterChange();
+}
+
+function clearAreas() {
+  if (!state.areas.length) return;
+  pushHistory();
   state.areas = [];
-  state.selectedId = null;
+  if (findArea(state.selectedId)) state.selectedId = null;
   afterChange();
 }
 
@@ -1040,6 +1089,8 @@ function setTool(tool) {
   if (leavingArea && state.areaDraft.length) {
     maybeCommitArea();
   }
+  if (tool === 'measure' || tool === 'calibrate') setLayerVisible('measure', true);
+  if (tool === 'area') setLayerVisible('area', true);
   if (tool === 'area' && !state.areaDraft.length) {
     toast('Tap points on the plan, then tap the first point to close');
   }
@@ -1136,6 +1187,16 @@ function syncUI() {
 
   els.snapToggle.setAttribute('aria-pressed', String(state.snapLines));
 
+  for (const [layer, toggle, section] of [
+    ['measure', els.layerMeasureToggle, els.measureSection],
+    ['area', els.layerAreaToggle, els.areaSection],
+  ]) {
+    const visible = layerVisible(layer);
+    toggle.setAttribute('aria-pressed', String(visible));
+    toggle.textContent = visible ? 'Hide' : 'Show';
+    section.classList.toggle('layer-hidden', !visible);
+  }
+
   els.zoomInfo.textContent = `${Math.round(state.view.scale * 100)}%`;
 
   const isPdf = state.source?.kind === 'pdf';
@@ -1189,7 +1250,8 @@ function syncUI() {
 
   els.undoBtn.disabled = history.length === 0;
   els.deleteBtn.disabled = state.selectedId == null;
-  els.clearBtn.disabled = state.measurements.length === 0 && state.areas.length === 0;
+  els.clearMeasureBtn.disabled = state.measurements.length === 0;
+  els.clearAreaBtn.disabled = state.areas.length === 0;
   els.exportBtn.disabled = !state.source;
 }
 
@@ -1215,6 +1277,7 @@ async function applySavedState(saved) {
   for (const [page, annotations] of saved.pages || []) pageStore.set(page, annotations);
   state.view = saved.view || { scale: 1, tx: 0, ty: 0 };
   state.snapLines = saved.snapLines ?? false;
+  state.layerVisibility = resolveLayerVisibility(saved.layers);
   history.length = 0;
   loadPageAnnotations();
   afterChange();
@@ -1292,6 +1355,7 @@ async function exportProject() {
       page: state.source.page,
       view: state.view,
       snapLines: state.snapLines,
+      layers: state.layerVisibility,
       pages: [...pageStore.entries()],
       source: { type: state.source.blob.type, data: dataUrl },
     };
@@ -1322,6 +1386,7 @@ async function importProject(file) {
       page: payload.page,
       view: payload.view,
       snapLines: payload.snapLines,
+      layers: payload.layers,
       pages: payload.pages,
       sourceBlob: dataUrlToBlob(payload.source.data),
     });
@@ -1390,7 +1455,10 @@ function bindEvents() {
   });
   els.undoBtn.addEventListener('click', undo);
   els.deleteBtn.addEventListener('click', openConfirmDelete);
-  els.clearBtn.addEventListener('click', clearAnnotations);
+  els.clearMeasureBtn.addEventListener('click', clearMeasurements);
+  els.clearAreaBtn.addEventListener('click', clearAreas);
+  els.layerMeasureToggle.addEventListener('click', () => toggleLayer('measure'));
+  els.layerAreaToggle.addEventListener('click', () => toggleLayer('area'));
   els.exportBtn.addEventListener('click', exportPng);
   els.resetCalibration.addEventListener('click', resetCalibration);
   els.knownSet.addEventListener('click', setScaleFromSelected);

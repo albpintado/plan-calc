@@ -273,6 +273,9 @@ button#panelToggle[aria-pressed="false"] {
 }
 
 .panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -287,6 +290,28 @@ button#panelToggle[aria-pressed="false"] {
   padding: 0 7px;
   font-size: 11px;
   color: var(--text);
+}
+
+.layer-toggle {
+  margin: 0 0 0 auto;
+  padding: 2px 8px;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.layer-toggle[aria-pressed="false"] {
+  color: var(--text-dim);
+  border-style: dashed;
+}
+
+.panel section.layer-hidden .list,
+.panel section.layer-hidden .total {
+  opacity: 0.45;
+}
+
+.panel section.layer-hidden h2 .count {
+  opacity: 0.5;
 }
 
 .badge {

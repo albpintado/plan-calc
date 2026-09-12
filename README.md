@@ -48,6 +48,20 @@ To move it — or to keep a backup — use **Project → Export file** and **Imp
 (a `.json` containing the plan and all annotations). The panel also shows the address
 the project is saved for.
 
+## Layers
+
+Annotations are grouped into two layers, toggled from the Info panel with **Hide** /
+**Show**:
+
+- **Dimensions** — the dimensions, the calibration line and the on-canvas scale bar.
+- **Areas** — the measured polygons.
+
+A hidden layer is not drawn, cannot be selected and does not act as a snapping target;
+picking a tool whose layer is hidden makes it visible again. Visibility is saved with
+the project, so it survives a reload. Each layer can be emptied on its own with
+**Clear dimensions** / **Clear areas**; clearing the dimensions keeps the calibration
+(use **Reset calibration** for that). Both are undoable.
+
 ## Workflow
 
 1. **Open plan** — an image (PNG/JPG/WebP) or a PDF (multi-page supported).
@@ -129,6 +143,7 @@ All of this lives in `src/measure.js` and is covered by `test/measure.test.js`.
 | `src/render.js` | Canvas drawing of raster, calibration and dimensions |
 | `src/source.js` | Image / PDF loading and page rasterisation (pdf.js) |
 | `src/persistence.js` | IndexedDB autosave |
+| `src/layers.js` | Layer visibility defaults and resolution |
 | `src/main.js` | State, tools, pointer/keyboard events, UI |
 
 ## Notes

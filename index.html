@@ -79,18 +79,27 @@
             <button id="resetCalibration" class="ghost small" hidden>Reset calibration</button>
           </section>
 
-          <section>
-            <h2>Dimensions <span id="measureCount" class="count">0</span></h2>
+          <section id="measureSection">
+            <h2>
+              <span>Dimensions <span id="measureCount" class="count">0</span></span>
+              <button id="layerMeasureToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
+            </h2>
             <div class="panel-actions">
               <button id="deleteBtn" class="ghost small" disabled>Delete selected</button>
-              <button id="clearBtn" class="ghost small" disabled>Clear all</button>
+              <button id="clearMeasureBtn" class="ghost small" disabled>Clear dimensions</button>
             </div>
             <ul id="measurementList" class="list"></ul>
             <div id="totalRow" class="total" hidden><span>Total</span><b id="totalValue">0 mm</b></div>
           </section>
 
-          <section>
-            <h2>Areas <span id="areaCount" class="count">0</span></h2>
+          <section id="areaSection">
+            <h2>
+              <span>Areas <span id="areaCount" class="count">0</span></span>
+              <button id="layerAreaToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
+            </h2>
+            <div class="panel-actions">
+              <button id="clearAreaBtn" class="ghost small" disabled>Clear areas</button>
+            </div>
             <ul id="areaList" class="list"></ul>
             <div id="areaTotalRow" class="total" hidden><span>Total</span><b id="areaTotal">0 m²</b></div>
           </section>
@@ -117,6 +126,7 @@
               <li><b>Shift</b> — lock to 45° steps</li>
               <li><b>Snap</b> (S) — align to grid and existing lines</li>
               <li><b>Click</b> a line — shows × to delete</li>
+              <li><b>Hide</b> — toggle the dimensions or areas layer</li>
               <li><b>Select</b> a dimension — drag its ends or body to edit</li>
               <li><b>Touch</b> — a magnifier follows your finger while drawing</li>
               <li><b>Two-finger drag</b> — pinch to zoom / pan</li>
