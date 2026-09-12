@@ -242,6 +242,10 @@ button.icon-btn {
   font-weight: 700;
 }
 
+.count-badge[hidden] {
+  display: none;
+}
+
 .panel-actions {
   display: flex;
   gap: 6px;
@@ -369,6 +373,10 @@ button#panelToggle[aria-pressed="false"] {
   border-top: 1px dashed var(--border);
   font-size: 12px;
   font-family: var(--mono);
+}
+
+.total[hidden] {
+  display: none;
 }
 
 .help {
