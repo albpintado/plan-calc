@@ -291,16 +291,22 @@ function flushSave() {
 function persist() {
   if (!state.source || !state.source.blob) return pendingSave;
   stashCurrentPage();
-  pendingSave = saveState({
+  const payload = {
     version: 1,
     kind: state.source.kind,
     name: state.source.name,
     page: state.source.page,
-    sourceBlob: state.source.blob,
+    sourceType: state.source.blob.type || '',
     view: state.view,
     snapLines: state.snapLines,
     pages: [...pageStore.entries()],
-  }).catch((error) => {
+  };
+  // Store raw bytes as an ArrayBuffer. WebKit can evict the backing file of a
+  // Blob kept in IndexedDB, which then throws NotFoundError ("The object can
+  // not be found here") on restore. Fall back to the Blob for old records.
+  if (state.source.buffer) payload.sourceBuffer = state.source.buffer;
+  else payload.sourceBlob = state.source.blob;
+  pendingSave = saveState(payload).catch((error) => {
     console.warn('persist failed', error && (error.message || error), error);
   });
   return pendingSave;
@@ -1197,9 +1203,10 @@ function hideLoading() {
 }
 
 async function applySavedState(saved) {
-  const file = new File([saved.sourceBlob], saved.name || 'plan', {
-    type: saved.sourceBlob.type || '',
-  });
+  const data = saved.sourceBuffer || saved.sourceBlob;
+  if (!data) throw new Error('The saved file is missing');
+  const type = saved.sourceType || (saved.sourceBlob && saved.sourceBlob.type) || '';
+  const file = new File([data], saved.name || 'plan', { type });
   let source = await createSource(file);
   if (saved.kind === 'pdf' && saved.page > 1) source = await goToPage(source, saved.page);
   if (state.source) releaseSource(state.source);
@@ -1225,7 +1232,7 @@ async function restore() {
       let phase = 'load';
       try {
         const saved = await loadState();
-        if (!saved || !saved.sourceBlob) return;
+        if (!saved || (!saved.sourceBlob && !saved.sourceBuffer)) return;
         phase = 'apply';
         await applySavedState(saved);
         lastError = null;

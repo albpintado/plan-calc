@@ -28,13 +28,16 @@ async function rasterizePdfPage(pdfDoc, pageNumber) {
 }
 
 export async function createPdfSource(file) {
-  const data = await file.arrayBuffer();
-  const pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+  const buffer = await file.arrayBuffer();
+  // pdfjs may transfer/detach the array it is given, so hand it a copy and keep
+  // the original for persistence.
+  const pdfDoc = await pdfjsLib.getDocument({ data: buffer.slice(0) }).promise;
   const bitmap = await rasterizePdfPage(pdfDoc, 1);
   return {
     kind: 'pdf',
     name: file.name,
     blob: file,
+    buffer,
     pdfDoc,
     page: 1,
     pageCount: pdfDoc.numPages,
@@ -45,11 +48,12 @@ export async function createPdfSource(file) {
 }
 
 export async function createImageSource(file) {
-  const bitmap = await createImageBitmap(file);
+  const [buffer, bitmap] = await Promise.all([file.arrayBuffer(), createImageBitmap(file)]);
   return {
     kind: 'image',
     name: file.name,
     blob: file,
+    buffer,
     pdfDoc: null,
     page: 1,
     pageCount: 1,

@@ -29,13 +29,16 @@ function resetDb() {
 
 function openDb() {
   if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
+  const promise = new Promise((resolve, reject) => {
     let settled = false;
     const finish = (fn, value) => {
       if (settled) return;
       settled = true;
       fn(value);
     };
+    // A stale connection's onclose/onversionchange must not tear down a newer
+    // connection, so every handler checks that it still owns dbPromise.
+    const isCurrent = () => dbPromise === promise;
     let request;
     try {
       request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -53,10 +56,14 @@ function openDb() {
         closeConnection(db);
         return;
       }
-      db.onclose = resetDb;
+      db.onclose = () => {
+        if (!isCurrent()) return;
+        dbPromise = null;
+        closeConnection(db);
+      };
       db.onversionchange = () => {
         closeConnection(db);
-        resetDb();
+        if (isCurrent()) dbPromise = null;
       };
       finish(resolve, db);
     };
@@ -66,15 +73,16 @@ function openDb() {
     request.onblocked = () => {
       setTimeout(() => {
         if (settled) return;
-        resetDb();
+        if (isCurrent()) dbPromise = null;
         finish(reject, new Error('The database is blocked by another tab'));
       }, OPEN_TIMEOUT_MS);
     };
   });
-  dbPromise.catch(() => {
-    dbPromise = null;
+  dbPromise = promise;
+  promise.catch(() => {
+    if (dbPromise === promise) dbPromise = null;
   });
-  return dbPromise;
+  return promise;
 }
 
 function runTransaction(db, mode, run) {
