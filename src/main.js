@@ -21,6 +21,15 @@ import { render } from './render.js';
 import { createSource, goToPage, releaseSource } from './source.js';
 import { loadState, saveState, closeState } from './persistence.js';
 import { DEFAULT_LAYER_VISIBILITY, isLayerVisible, resolveLayerVisibility } from './layers.js';
+import {
+  OPENING_TYPES,
+  SPACE_TYPES,
+  WALL_TYPES,
+  computeQuantities,
+  quantitiesToRows,
+  toCsv,
+  wallType,
+} from './model.js';
 
 const els = {
   canvas: document.getElementById('canvas'),
@@ -49,10 +58,28 @@ const els = {
   deleteBtn: document.getElementById('deleteBtn'),
   clearMeasureBtn: document.getElementById('clearMeasureBtn'),
   clearAreaBtn: document.getElementById('clearAreaBtn'),
+  clearWallBtn: document.getElementById('clearWallBtn'),
+  clearOpeningBtn: document.getElementById('clearOpeningBtn'),
   layerMeasureToggle: document.getElementById('layerMeasureToggle'),
   layerAreaToggle: document.getElementById('layerAreaToggle'),
+  layerWallToggle: document.getElementById('layerWallToggle'),
+  layerOpeningToggle: document.getElementById('layerOpeningToggle'),
   measureSection: document.getElementById('measureSection'),
   areaSection: document.getElementById('areaSection'),
+  wallSection: document.getElementById('wallSection'),
+  openingSection: document.getElementById('openingSection'),
+  spaceType: document.getElementById('spaceType'),
+  wallType: document.getElementById('wallType'),
+  wallThickness: document.getElementById('wallThickness'),
+  openingType: document.getElementById('openingType'),
+  wallCount: document.getElementById('wallCount'),
+  wallList: document.getElementById('wallList'),
+  wallTotalRow: document.getElementById('wallTotalRow'),
+  wallTotal: document.getElementById('wallTotal'),
+  openingCount: document.getElementById('openingCount'),
+  openingList: document.getElementById('openingList'),
+  quantities: document.getElementById('quantities'),
+  exportCsv: document.getElementById('exportCsv'),
   exportBtn: document.getElementById('exportBtn'),
   calibrateStatus: document.getElementById('calibrateStatus'),
   resetCalibration: document.getElementById('resetCalibration'),
@@ -89,6 +116,8 @@ const state = {
   calibration: null,
   measurements: [],
   areas: [],
+  walls: [],
+  openings: [],
   selectedId: null,
   preview: null,
   snap: null,
@@ -131,6 +160,8 @@ function snapshot() {
       : null,
     measurements: state.measurements.map((m) => ({ ...m, a: { ...m.a }, b: { ...m.b } })),
     areas: state.areas.map((a) => ({ ...a, points: a.points.map((p) => ({ ...p })) })),
+    walls: state.walls.map((w) => ({ ...w, a: { ...w.a }, b: { ...w.b } })),
+    openings: state.openings.map((o) => ({ ...o, a: { ...o.a }, b: { ...o.b } })),
   };
 }
 
@@ -145,6 +176,8 @@ function undo() {
   state.calibration = previous.calibration;
   state.measurements = previous.measurements;
   state.areas = previous.areas ?? [];
+  state.walls = previous.walls ?? [];
+  state.openings = previous.openings ?? [];
   state.selectedId = null;
   afterChange();
 }
@@ -178,7 +211,7 @@ function positionDeleteHandle() {
       const center = transform.toScreen(polygonCentroid(area.points));
       handle = { x: center.x, y: center.y };
     } else {
-      const measurement = state.measurements.find((m) => m.id === selected);
+      const measurement = findSegment(selected);
       if (measurement) {
         const a = transform.toScreen(measurement.a);
         const b = transform.toScreen(measurement.b);
@@ -330,6 +363,8 @@ function stashCurrentPage() {
     calibration: state.calibration,
     measurements: state.measurements,
     areas: state.areas,
+    walls: state.walls,
+    openings: state.openings,
   });
 }
 
@@ -338,6 +373,8 @@ function loadPageAnnotations() {
   state.calibration = saved?.calibration ?? null;
   state.measurements = saved?.measurements ?? [];
   state.areas = saved?.areas ?? [];
+  state.walls = saved?.walls ?? [];
+  state.openings = saved?.openings ?? [];
   state.selectedId = null;
 }
 
@@ -375,6 +412,16 @@ function snapPoints(excludeId = null) {
     for (const area of state.areas) points.push(...area.points);
     points.push(...state.areaDraft);
   }
+  if (layerVisible('wall')) {
+    for (const wall of state.walls) {
+      if (wall.id !== excludeId) points.push(wall.a, wall.b);
+    }
+  }
+  if (layerVisible('opening')) {
+    for (const opening of state.openings) {
+      if (opening.id !== excludeId) points.push(opening.a, opening.b);
+    }
+  }
   return points;
 }
 
@@ -385,6 +432,16 @@ function referenceDirections(excludeId = null) {
       if (measurement.id !== excludeId) directions.push(segmentAngle(measurement.a, measurement.b));
     }
     if (state.calibration) directions.push(segmentAngle(state.calibration.a, state.calibration.b));
+  }
+  if (layerVisible('wall')) {
+    for (const wall of state.walls) {
+      if (wall.id !== excludeId) directions.push(segmentAngle(wall.a, wall.b));
+    }
+  }
+  if (layerVisible('opening')) {
+    for (const opening of state.openings) {
+      if (opening.id !== excludeId) directions.push(segmentAngle(opening.a, opening.b));
+    }
   }
   return directions;
 }
@@ -409,6 +466,22 @@ function findArea(id) {
 
 function findMeasurement(id) {
   return state.measurements.find((measurement) => measurement.id === id) || null;
+}
+
+function findWall(id) {
+  return state.walls.find((wall) => wall.id === id) || null;
+}
+
+function findOpening(id) {
+  return state.openings.find((opening) => opening.id === id) || null;
+}
+
+function findSegment(id) {
+  return findMeasurement(id) || findWall(id) || findOpening(id) || null;
+}
+
+function findElement(id) {
+  return findSegment(id) || findArea(id) || null;
 }
 
 function setScaleFromSelected() {
@@ -441,7 +514,9 @@ function setScaleFromSelected() {
 
 function selectedLabel() {
   if (state.selectedId === 'calibration') return 'calibration line';
-  if (findArea(state.selectedId)) return 'area';
+  if (findArea(state.selectedId)) return 'space';
+  if (findWall(state.selectedId)) return 'wall';
+  if (findOpening(state.selectedId)) return 'opening';
   return 'dimension';
 }
 
@@ -465,6 +540,24 @@ function selectAt(imagePoint) {
       if (inside || d <= bestDistance) {
         bestDistance = inside ? 0 : d;
         selected = area.id;
+      }
+    }
+  }
+  if (layerVisible('wall')) {
+    for (const wall of state.walls) {
+      const d = distanceToSegment(imagePoint, wall.a, wall.b);
+      if (d <= bestDistance) {
+        bestDistance = d;
+        selected = wall.id;
+      }
+    }
+  }
+  if (layerVisible('opening')) {
+    for (const opening of state.openings) {
+      const d = distanceToSegment(imagePoint, opening.a, opening.b);
+      if (d <= bestDistance) {
+        bestDistance = d;
+        selected = opening.id;
       }
     }
   }
@@ -500,6 +593,10 @@ function confirmDelete() {
     state.calibration = null;
   } else if (findArea(selected)) {
     state.areas = state.areas.filter((area) => area.id !== selected);
+  } else if (findWall(selected)) {
+    state.walls = state.walls.filter((wall) => wall.id !== selected);
+  } else if (findOpening(selected)) {
+    state.openings = state.openings.filter((opening) => opening.id !== selected);
   } else {
     state.measurements = state.measurements.filter((m) => m.id !== selected);
   }
@@ -512,6 +609,12 @@ function clearLayerSelection(layer) {
     state.selectedId = null;
   }
   if (layer === 'area' && findArea(state.selectedId)) {
+    state.selectedId = null;
+  }
+  if (layer === 'wall' && findWall(state.selectedId)) {
+    state.selectedId = null;
+  }
+  if (layer === 'opening' && findOpening(state.selectedId)) {
     state.selectedId = null;
   }
 }
@@ -541,6 +644,26 @@ function clearAreas() {
   state.areas = [];
   if (findArea(state.selectedId)) state.selectedId = null;
   afterChange();
+}
+
+function clearWalls() {
+  if (!state.walls.length) return;
+  pushHistory();
+  state.walls = [];
+  if (findWall(state.selectedId)) state.selectedId = null;
+  afterChange();
+}
+
+function clearOpenings() {
+  if (!state.openings.length) return;
+  pushHistory();
+  state.openings = [];
+  if (findOpening(state.selectedId)) state.selectedId = null;
+  afterChange();
+}
+
+function currentWallThickness() {
+  return readNumber(els.wallThickness, 0);
 }
 
 function resetCalibration() {
@@ -584,7 +707,12 @@ function commitArea() {
     return;
   }
   pushHistory();
-  state.areas.push({ id: nextId++, points: state.areaDraft.map((point) => ({ ...point })) });
+  state.areas.push({
+    id: nextId++,
+    points: state.areaDraft.map((point) => ({ ...point })),
+    name: '',
+    type: els.spaceType.value || 'medicion',
+  });
   state.areaDraft = [];
   state.areaCursor = null;
   state.snap = null;
@@ -634,6 +762,8 @@ async function openFile(file) {
     state.calibration = null;
     state.measurements = [];
     state.areas = [];
+    state.walls = [];
+    state.openings = [];
     state.areaDraft = [];
     state.areaCursor = null;
     state.selectedId = null;
@@ -775,7 +905,7 @@ function onPointerDown(event) {
 
   const forcePan = event.button === 1 || spaceDown;
   if (!forcePan && state.tool === 'select') {
-    const measurement = typeof state.selectedId === 'number' ? findMeasurement(state.selectedId) : null;
+    const measurement = typeof state.selectedId === 'number' ? findSegment(state.selectedId) : null;
     if (measurement) {
       const transform = makeTransform(state.view);
       const a = transform.toScreen(measurement.a);
@@ -882,7 +1012,7 @@ function onPointerMove(event) {
   if (drag.pointerId !== event.pointerId) return;
 
   if (drag.mode === 'edit') {
-    const measurement = findMeasurement(drag.id);
+    const measurement = findSegment(drag.id);
     if (!measurement) return;
     const other = drag.endpoint === 'a' ? measurement.b : measurement.a;
     const result = resolvePoint(screen, other, event.shiftKey, drag.id);
@@ -899,7 +1029,7 @@ function onPointerMove(event) {
   }
 
   if (drag.mode === 'editBody') {
-    const measurement = findMeasurement(drag.id);
+    const measurement = findSegment(drag.id);
     if (!measurement) return;
     const image = makeTransform(state.view).toImage(screen);
     const dx = image.x - drag.startImage.x;
@@ -1008,6 +1138,39 @@ function onPointerUp(event) {
     return;
   }
 
+  if (finished.mode === 'wall') {
+    if (distance(finished.startImage, end) > 2) {
+      pushHistory();
+      state.walls.push({
+        id: nextId++,
+        a: finished.startImage,
+        b: end,
+        type: els.wallType.value,
+        thickness: currentWallThickness(),
+      });
+      afterChange();
+    } else {
+      requestRender();
+    }
+    return;
+  }
+
+  if (finished.mode === 'opening') {
+    if (distance(finished.startImage, end) > 2) {
+      pushHistory();
+      state.openings.push({
+        id: nextId++,
+        a: finished.startImage,
+        b: end,
+        type: els.openingType.value,
+      });
+      afterChange();
+    } else {
+      requestRender();
+    }
+    return;
+  }
+
   if (finished.mode === 'calibrate') {
     if (distance(finished.startImage, end) > 4) {
       openCalibrationDialog(finished.startImage, end, screen);
@@ -1091,8 +1254,16 @@ function setTool(tool) {
   }
   if (tool === 'measure' || tool === 'calibrate') setLayerVisible('measure', true);
   if (tool === 'area') setLayerVisible('area', true);
+  if (tool === 'wall') setLayerVisible('wall', true);
+  if (tool === 'opening') setLayerVisible('opening', true);
   if (tool === 'area' && !state.areaDraft.length) {
     toast('Tap points on the plan, then tap the first point to close');
+  }
+  if (tool === 'wall' && !state.walls.length) {
+    toast('Drag along a wall; thickness comes from the Walls panel');
+  }
+  if (tool === 'opening' && !state.openings.length) {
+    toast('Drag across a door or window to measure its width');
   }
   syncUI();
 }
@@ -1144,6 +1315,37 @@ function buildMeasurementList() {
   });
 }
 
+function readNumber(input, fallback = 0) {
+  const value = Number.parseFloat((input.value || '').replace(',', '.'));
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function makeRemoveButton(onRemove) {
+  const remove = document.createElement('button');
+  remove.className = 'remove';
+  remove.textContent = '×';
+  remove.title = 'Remove';
+  remove.addEventListener('click', (event) => {
+    event.stopPropagation();
+    onRemove();
+  });
+  return remove;
+}
+
+function makeSelect(options, value, onSelect) {
+  const select = document.createElement('select');
+  for (const option of options) {
+    const opt = document.createElement('option');
+    opt.value = option.value;
+    opt.textContent = option.label;
+    select.append(opt);
+  }
+  select.value = value;
+  select.addEventListener('click', (event) => event.stopPropagation());
+  select.addEventListener('change', () => onSelect(select.value));
+  return select;
+}
+
 function buildAreaList() {
   els.areaList.textContent = '';
   state.areas.forEach((area, index) => {
@@ -1154,23 +1356,38 @@ function buildAreaList() {
     idx.className = 'idx';
     idx.textContent = `#${index + 1}`;
 
-    const value = document.createElement('span');
-    value.className = 'value';
-    value.textContent = areaText(area.points);
+    const name = document.createElement('input');
+    name.className = 'name';
+    name.type = 'text';
+    name.placeholder = 'Name';
+    name.value = area.name || '';
+    name.addEventListener('click', (event) => event.stopPropagation());
+    name.addEventListener('change', () => {
+      pushHistory();
+      area.name = name.value.trim();
+      afterChange();
+    });
 
-    const remove = document.createElement('button');
-    remove.className = 'remove';
-    remove.textContent = '×';
-    remove.title = 'Remove';
-    remove.addEventListener('click', (event) => {
-      event.stopPropagation();
+    const remove = makeRemoveButton(() => {
       pushHistory();
       state.areas = state.areas.filter((a) => a.id !== area.id);
       if (state.selectedId === area.id) state.selectedId = null;
       afterChange();
     });
 
-    item.append(idx, value, remove);
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const type = makeSelect(SPACE_TYPES, area.type || 'medicion', (value) => {
+      pushHistory();
+      area.type = value;
+      afterChange();
+    });
+    const metric = document.createElement('span');
+    metric.className = 'metric';
+    metric.textContent = areaText(area.points);
+    meta.append(type, metric);
+
+    item.append(idx, name, remove, meta);
     item.addEventListener('click', () => {
       state.selectedId = area.id;
       requestRender();
@@ -1178,6 +1395,127 @@ function buildAreaList() {
     });
     els.areaList.append(item);
   });
+}
+
+function buildWallList() {
+  els.wallList.textContent = '';
+  const pxPerMeter = state.calibration?.pxPerMeter;
+  state.walls.forEach((wall, index) => {
+    const item = document.createElement('li');
+    item.className = wall.id === state.selectedId ? 'active' : '';
+
+    const idx = document.createElement('span');
+    idx.className = 'idx';
+    idx.textContent = `#${index + 1}`;
+
+    const type = makeSelect(WALL_TYPES, wall.type || 'tabique', (value) => {
+      pushHistory();
+      wall.type = value;
+      afterChange();
+    });
+
+    const remove = makeRemoveButton(() => {
+      pushHistory();
+      state.walls = state.walls.filter((w) => w.id !== wall.id);
+      if (state.selectedId === wall.id) state.selectedId = null;
+      afterChange();
+    });
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const thickness = document.createElement('input');
+    thickness.className = 'num';
+    thickness.type = 'number';
+    thickness.min = '0';
+    thickness.step = '1';
+    thickness.value = String(wall.thickness ?? 0);
+    thickness.title = 'Thickness (mm)';
+    thickness.addEventListener('click', (event) => event.stopPropagation());
+    thickness.addEventListener('change', () => {
+      pushHistory();
+      wall.thickness = readNumber(thickness, wall.thickness || 0);
+      afterChange();
+    });
+    const unit = document.createElement('span');
+    unit.className = 'field-unit';
+    unit.textContent = 'mm';
+    const metric = document.createElement('span');
+    metric.className = 'metric';
+    const mm = pxToMm(distance(wall.a, wall.b), pxPerMeter);
+    metric.textContent = state.calibration ? formatDimension(mm) : 'no scale';
+    meta.append(thickness, unit, metric);
+
+    item.append(idx, type, remove, meta);
+    item.addEventListener('click', () => {
+      state.selectedId = wall.id;
+      requestRender();
+      syncUI();
+    });
+    els.wallList.append(item);
+  });
+}
+
+function buildOpeningList() {
+  els.openingList.textContent = '';
+  const pxPerMeter = state.calibration?.pxPerMeter;
+  state.openings.forEach((opening, index) => {
+    const item = document.createElement('li');
+    item.className = opening.id === state.selectedId ? 'active' : '';
+
+    const idx = document.createElement('span');
+    idx.className = 'idx';
+    idx.textContent = `#${index + 1}`;
+
+    const type = makeSelect(OPENING_TYPES, opening.type || 'puerta', (value) => {
+      pushHistory();
+      opening.type = value;
+      afterChange();
+    });
+
+    const remove = makeRemoveButton(() => {
+      pushHistory();
+      state.openings = state.openings.filter((o) => o.id !== opening.id);
+      if (state.selectedId === opening.id) state.selectedId = null;
+      afterChange();
+    });
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const metric = document.createElement('span');
+    metric.className = 'metric';
+    const mm = pxToMm(distance(opening.a, opening.b), pxPerMeter);
+    metric.textContent = state.calibration ? formatDimension(mm) : 'no scale';
+    meta.append(metric);
+
+    item.append(idx, type, remove, meta);
+    item.addEventListener('click', () => {
+      state.selectedId = opening.id;
+      requestRender();
+      syncUI();
+    });
+    els.openingList.append(item);
+  });
+}
+
+function buildQuantities() {
+  const q = computeQuantities(state);
+  const rows = [];
+  if (!q.calibrated) {
+    rows.push(['q-section', 'Not calibrated — values in mm² and m are unavailable']);
+  }
+  rows.push(['q-label', 'Useful area'], ['q-value', `${q.usefulArea.toFixed(2)} m²`]);
+  rows.push(['q-label', 'Wall footprint'], ['q-value', `${q.wallArea.toFixed(2)} m²`]);
+  rows.push(['q-label', 'Built area (est.)'], ['q-value', `${q.builtArea.toFixed(2)} m²`]);
+  rows.push(['q-label', 'Measured area'], ['q-value', `${q.measuredArea.toFixed(2)} m²`]);
+  rows.push(['q-label', 'Wall length'], ['q-value', `${q.wallLength.toFixed(2)} m`]);
+  rows.push(['q-label', 'Openings'], ['q-value', `${q.openingCount}`]);
+  els.quantities.textContent = '';
+  for (const [cls, text] of rows) {
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = text;
+    els.quantities.append(span);
+  }
 }
 
 function syncUI() {
@@ -1190,6 +1528,8 @@ function syncUI() {
   for (const [layer, toggle, section] of [
     ['measure', els.layerMeasureToggle, els.measureSection],
     ['area', els.layerAreaToggle, els.areaSection],
+    ['wall', els.layerWallToggle, els.wallSection],
+    ['opening', els.layerOpeningToggle, els.openingSection],
   ]) {
     const visible = layerVisible(layer);
     toggle.setAttribute('aria-pressed', String(visible));
@@ -1219,9 +1559,11 @@ function syncUI() {
 
   els.knownSet.disabled = !(typeof state.selectedId === 'number' && findMeasurement(state.selectedId));
 
+  const annotationCount =
+    state.measurements.length + state.areas.length + state.walls.length + state.openings.length;
   els.measureCount.textContent = String(state.measurements.length);
-  els.panelCount.textContent = String(state.measurements.length + state.areas.length);
-  els.panelCount.hidden = state.measurements.length + state.areas.length === 0;
+  els.panelCount.textContent = String(annotationCount);
+  els.panelCount.hidden = annotationCount === 0;
   buildMeasurementList();
 
   if (state.calibration && state.measurements.length > 1) {
@@ -1248,10 +1590,30 @@ function syncUI() {
     els.areaTotalRow.hidden = true;
   }
 
+  els.wallCount.textContent = String(state.walls.length);
+  buildWallList();
+  if (state.calibration && state.walls.length) {
+    const totalLength = state.walls.reduce(
+      (sum, wall) => sum + pxToMm(distance(wall.a, wall.b), state.calibration.pxPerMeter) / 1000,
+      0,
+    );
+    els.wallTotal.textContent = `${totalLength.toFixed(2)} m`;
+    els.wallTotalRow.hidden = false;
+  } else {
+    els.wallTotalRow.hidden = true;
+  }
+
+  els.openingCount.textContent = String(state.openings.length);
+  buildOpeningList();
+
+  buildQuantities();
+
   els.undoBtn.disabled = history.length === 0;
   els.deleteBtn.disabled = state.selectedId == null;
   els.clearMeasureBtn.disabled = state.measurements.length === 0;
   els.clearAreaBtn.disabled = state.areas.length === 0;
+  els.clearWallBtn.disabled = state.walls.length === 0;
+  els.clearOpeningBtn.disabled = state.openings.length === 0;
   els.exportBtn.disabled = !state.source;
 }
 
@@ -1337,6 +1699,22 @@ function dataUrlToBlob(dataUrl) {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return new Blob([bytes], { type });
+}
+
+function exportQuantitiesCsv() {
+  if (!state.source) {
+    toast('Nothing to export', true);
+    return;
+  }
+  const csv = toCsv(quantitiesToRows(computeQuantities(state)));
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${(state.source.name || 'plan').replace(/\.[^.]+$/, '')}-quantities.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('Exported CSV');
 }
 
 async function exportProject() {
@@ -1457,8 +1835,16 @@ function bindEvents() {
   els.deleteBtn.addEventListener('click', openConfirmDelete);
   els.clearMeasureBtn.addEventListener('click', clearMeasurements);
   els.clearAreaBtn.addEventListener('click', clearAreas);
+  els.clearWallBtn.addEventListener('click', clearWalls);
+  els.clearOpeningBtn.addEventListener('click', clearOpenings);
   els.layerMeasureToggle.addEventListener('click', () => toggleLayer('measure'));
   els.layerAreaToggle.addEventListener('click', () => toggleLayer('area'));
+  els.layerWallToggle.addEventListener('click', () => toggleLayer('wall'));
+  els.layerOpeningToggle.addEventListener('click', () => toggleLayer('opening'));
+  els.exportCsv.addEventListener('click', exportQuantitiesCsv);
+  els.wallType.addEventListener('change', () => {
+    els.wallThickness.value = String(wallType(els.wallType.value).thickness);
+  });
   els.exportBtn.addEventListener('click', exportPng);
   els.resetCalibration.addEventListener('click', resetCalibration);
   els.knownSet.addEventListener('click', setScaleFromSelected);
@@ -1515,6 +1901,8 @@ function bindEvents() {
     else if (event.key === '2') setTool('calibrate');
     else if (event.key === '3') setTool('measure');
     else if (event.key === '4') setTool('area');
+    else if (event.key === '5') setTool('wall');
+    else if (event.key === '6') setTool('opening');
     else if (event.key === 'Enter' && state.tool === 'area' && state.areaDraft.length >= 3) {
       commitArea();
       event.preventDefault();
@@ -1559,8 +1947,27 @@ function bindEvents() {
   new ResizeObserver(resize).observe(workspace);
 }
 
+function populateSelect(select, options, value) {
+  select.textContent = '';
+  for (const option of options) {
+    const opt = document.createElement('option');
+    opt.value = option.value;
+    opt.textContent = option.label;
+    select.append(opt);
+  }
+  if (value) select.value = value;
+}
+
+function populateTypeSelects() {
+  populateSelect(els.spaceType, SPACE_TYPES, 'medicion');
+  populateSelect(els.wallType, WALL_TYPES, 'tabique');
+  populateSelect(els.openingType, OPENING_TYPES, 'puerta');
+  els.wallThickness.value = String(wallType('tabique').thickness);
+}
+
 function init() {
   if (canonicalizeOrigin()) return;
+  populateTypeSelects();
   bindEvents();
   resize();
   els.canvas.style.cursor = 'grab';

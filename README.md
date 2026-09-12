@@ -50,17 +50,19 @@ the project is saved for.
 
 ## Layers
 
-Annotations are grouped into two layers, toggled from the Info panel with **Hide** /
+Annotations are grouped into four layers, toggled from the Info panel with **Hide** /
 **Show**:
 
 - **Dimensions** — the dimensions, the calibration line and the on-canvas scale bar.
-- **Areas** — the measured polygons.
+- **Spaces** — the named areas / rooms.
+- **Walls** — the wall segments.
+- **Openings** — the doors and windows.
 
 A hidden layer is not drawn, cannot be selected and does not act as a snapping target;
 picking a tool whose layer is hidden makes it visible again. Visibility is saved with
 the project, so it survives a reload. Each layer can be emptied on its own with
-**Clear dimensions** / **Clear areas**; clearing the dimensions keeps the calibration
-(use **Reset calibration** for that). Both are undoable.
+**Clear dimensions / spaces / walls / openings**; clearing the dimensions keeps the
+calibration (use **Reset calibration** for that). All are undoable.
 
 ## Workflow
 
@@ -74,22 +76,52 @@ the project, so it survives a reload. Each layer can be emptied on its own with
    mm. `Shift` locks the angle to 45° steps; endpoints snap to existing points. The
    **Snap** toggle (`S`) also snaps the angle to horizontal, vertical or any existing
    dimension/calibration line, so a diagonal drag still comes out parallel.
-4. **Area** (key `4`) — tap points to build a polygon and tap the first point (or press
-   `Enter`) to close it. The area is shown in m² (or cm² for small ones). Dragging pans,
-   and a second finger zooms, so it works one-handed on mobile.
-5. **Select / edit / delete** — with the Pan tool, click a dimension, an area or the
-   calibration line to highlight it. A selected dimension shows **handles on its ends**
-   (drag one to move it) and on its body (drag to move the whole dimension); a red `×`
-   deletes the line after a small confirmation. Changes are undoable with `Ctrl+Z`.
-6. **Export PNG** — writes the annotated plan to a file. Projects (raster, calibration,
-   dimensions and areas per page) are auto-saved in IndexedDB and restored on reload.
+4. **Space / Area** (key `4`) — pick a **type** (Living room, Bedroom, Kitchen, Bathroom,
+   …, or Measurement) in the Spaces panel, then tap points to build a polygon and tap the
+   first point (or press `Enter`) to close it. The area is shown in m² (or cm² for small
+   ones). Typed spaces count towards the **useful area**; `Measurement` polygons are just
+   free areas. Each row can be **named** and its type changed. Dragging pans, and a second
+   finger zooms, so it works one-handed on mobile.
+5. **Wall** (key `5`) — drag along a wall. Its **type** and **thickness (mm)** come from
+   the Walls panel; walls add to the wall length and footprint.
+6. **Opening** (key `6`) — drag across a door or window; its type (Door/Window) is picked
+   in the Openings panel. Openings are counted and their widths totalled.
+7. **Quantities** — the panel shows useful area, wall footprint, built area (estimated =
+   useful + wall footprint), measured area, wall length and opening count. **Export CSV**
+   writes the breakdown (summary, spaces by name, rooms by type, walls and openings).
+8. **Select / edit / delete** — with the Pan tool, click a dimension, wall, opening, space
+   or the calibration line to highlight it. A selected segment shows **handles on its
+   ends** (drag one to move it) and on its body (drag to move it); a red `×` deletes it
+   after a small confirmation. Changes are undoable with `Ctrl+Z`.
+9. **Export PNG** — writes the annotated plan to a file. Projects (raster, calibration,
+   dimensions, spaces, walls and openings per page) are auto-saved in IndexedDB and
+   restored on reload.
+
+## Model and quantities
+
+Beyond annotating an image, the tool keeps a small **model of the home** so it can answer
+"how big are the spaces?":
+
+- **Spaces** are polygons with a **name** and a **type**; the types marked as rooms add up
+  to the **useful area**.
+- **Walls** are segments with a **type** and a **thickness** in millimetres; they
+  contribute their length and their footprint (length × thickness).
+- **Openings** are segments tagged as a door/window; they contribute a count and a total
+  width.
+- **Quantities** are derived from the model (see `src/model.js`, covered by
+  `test/model.test.js`) and exportable as **CSV** for a take-off.
+
+Walls and openings need a calibration to convert pixels to real units; without it they are
+still drawn but the quantities read as unavailable. Everything is additive: the original
+dimensions (cotas) and free areas keep working exactly as before, and all groups keep
+their own layer toggle.
 
 ## Keys and touch
 
 | Input | Action |
 | --- | --- |
-| `1` / `2` / `3` / `4` | Pan-Select / Calibrate / Dimension / Area |
-| `Enter` (in Area) | Close the polygon |
+| `1` / `2` / `3` / `4` / `5` / `6` | Pan-Select / Calibrate / Dimension / Space / Wall / Opening |
+| `Enter` (in Space) | Close the polygon |
 | `Shift` (while drawing) | Lock angle to 45° |
 | `S` | Toggle angle snap (grid + existing lines) |
 | Click a line | Select it (shows `×` to delete) |
@@ -102,10 +134,10 @@ the project, so it survives a reload. Each layer can be emptied on its own with
 | `Delete` | Delete selected (asks to confirm) |
 | `Ctrl+Z` | Undo |
 
-The **Info** button (or `H`) shows the side panel with the scale, the dimension list
-and the delete/clear actions; it starts closed so the plan has the full area, and the
-button carries a badge with the number of dimensions. The top bar stays on a single
-line and scrolls horizontally if the screen is too narrow.
+The **Info** button (or `H`) shows the side panel with the scale, the Spaces / Walls /
+Openings lists, the quantities and the delete/clear actions; it starts closed so the plan
+has the full area, and the button carries a badge with the number of annotations. The top
+bar stays on a single line and scrolls horizontally if the screen is too narrow.
 
 ## How the math works
 
@@ -144,6 +176,7 @@ All of this lives in `src/measure.js` and is covered by `test/measure.test.js`.
 | `src/source.js` | Image / PDF loading and page rasterisation (pdf.js) |
 | `src/persistence.js` | IndexedDB autosave |
 | `src/layers.js` | Layer visibility defaults and resolution |
+| `src/model.js` | Space/wall/opening types and the quantities (take-off) |
 | `src/main.js` | State, tools, pointer/keyboard events, UI |
 
 ## Notes

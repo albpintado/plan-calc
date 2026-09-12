@@ -15,13 +15,32 @@ test('defaults to every layer visible', () => {
 });
 
 test('keeps a partial visibility object and fills the rest', () => {
-  assert.deepEqual(resolveLayerVisibility({ area: false }), { measure: true, area: false });
-  assert.deepEqual(resolveLayerVisibility({ measure: false }), { measure: false, area: true });
+  assert.deepEqual(resolveLayerVisibility({ area: false }), {
+    measure: true,
+    area: false,
+    wall: true,
+    opening: true,
+  });
+  assert.deepEqual(resolveLayerVisibility({ measure: false }), {
+    measure: false,
+    area: true,
+    wall: true,
+    opening: true,
+  });
+});
+
+test('accepts the new wall and opening layers', () => {
+  assert.deepEqual(resolveLayerVisibility({ wall: false, opening: false }), {
+    measure: true,
+    area: true,
+    wall: false,
+    opening: false,
+  });
 });
 
 test('ignores unknown and non-boolean values', () => {
   const resolved = resolveLayerVisibility({ measure: 'yes', area: false, future: false });
-  assert.deepEqual(resolved, { measure: true, area: false });
+  assert.deepEqual(resolved, { measure: true, area: false, wall: true, opening: true });
   assert.deepEqual(Object.keys(resolved).sort(), [...LAYERS].sort());
 });
 

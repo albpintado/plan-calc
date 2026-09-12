@@ -21,7 +21,9 @@
           <button id="toolSelect" data-tool="select" class="tool active" title="Pan and select (1)">Pan <kbd>1</kbd></button>
           <button id="toolCalibrate" data-tool="calibrate" class="tool" title="Calibrate scale (2)">Calibrate <kbd>2</kbd></button>
           <button id="toolMeasure" data-tool="measure" class="tool" title="Draw dimension (3)">Dimension <kbd>3</kbd></button>
-          <button id="toolArea" data-tool="area" class="tool" title="Draw area (4)">Area <kbd>4</kbd></button>
+          <button id="toolArea" data-tool="area" class="tool" title="Draw a space / area (4)">Space <kbd>4</kbd></button>
+          <button id="toolWall" data-tool="wall" class="tool" title="Draw a wall with thickness (5)">Wall <kbd>5</kbd></button>
+          <button id="toolOpening" data-tool="opening" class="tool" title="Draw a door or window (6)">Opening <kbd>6</kbd></button>
         </div>
 
         <span class="divider"></span>
@@ -94,14 +96,54 @@
 
           <section id="areaSection">
             <h2>
-              <span>Areas <span id="areaCount" class="count">0</span></span>
+              <span>Spaces <span id="areaCount" class="count">0</span></span>
               <button id="layerAreaToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
             </h2>
+            <div class="dialog-row">
+              <select id="spaceType" title="Type for the next space you draw"></select>
+            </div>
             <div class="panel-actions">
-              <button id="clearAreaBtn" class="ghost small" disabled>Clear areas</button>
+              <button id="clearAreaBtn" class="ghost small" disabled>Clear spaces</button>
             </div>
             <ul id="areaList" class="list"></ul>
             <div id="areaTotalRow" class="total" hidden><span>Total</span><b id="areaTotal">0 m²</b></div>
+          </section>
+
+          <section id="wallSection">
+            <h2>
+              <span>Walls <span id="wallCount" class="count">0</span></span>
+              <button id="layerWallToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
+            </h2>
+            <div class="dialog-row">
+              <select id="wallType" title="Type for the next wall you draw"></select>
+              <input id="wallThickness" type="number" min="0" step="1" inputmode="numeric" value="90" title="Wall thickness in millimetres" />
+              <span class="field-unit">mm</span>
+            </div>
+            <div class="panel-actions">
+              <button id="clearWallBtn" class="ghost small" disabled>Clear walls</button>
+            </div>
+            <ul id="wallList" class="list"></ul>
+            <div id="wallTotalRow" class="total" hidden><span>Total length</span><b id="wallTotal">0 m</b></div>
+          </section>
+
+          <section id="openingSection">
+            <h2>
+              <span>Openings <span id="openingCount" class="count">0</span></span>
+              <button id="layerOpeningToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
+            </h2>
+            <div class="dialog-row">
+              <select id="openingType" title="Type for the next opening you draw"></select>
+            </div>
+            <div class="panel-actions">
+              <button id="clearOpeningBtn" class="ghost small" disabled>Clear openings</button>
+            </div>
+            <ul id="openingList" class="list"></ul>
+          </section>
+
+          <section id="quantitiesSection">
+            <h2>Quantities</h2>
+            <div id="quantities" class="quantities"></div>
+            <button id="exportCsv" class="ghost small">Export CSV</button>
           </section>
 
           <section>
@@ -121,13 +163,14 @@
           <section>
             <h2>Help</h2>
             <ul class="help">
-              <li><b>Drag</b> — draw a dimension</li>
-              <li><b>Area</b> — tap points, tap the first to close</li>
+              <li><b>Drag</b> — draw a dimension / wall / opening</li>
+              <li><b>Space</b> (4) — tap points, tap the first to close</li>
+              <li><b>Wall</b> (5) / <b>Opening</b> (6) — drag a segment</li>
               <li><b>Shift</b> — lock to 45° steps</li>
               <li><b>Snap</b> (S) — align to grid and existing lines</li>
               <li><b>Click</b> a line — shows × to delete</li>
-              <li><b>Hide</b> — toggle the dimensions or areas layer</li>
-              <li><b>Select</b> a dimension — drag its ends or body to edit</li>
+              <li><b>Hide</b> — toggle a layer (dimensions/spaces/walls/openings)</li>
+              <li><b>Select</b> a line — drag its ends or body to edit</li>
               <li><b>Touch</b> — a magnifier follows your finger while drawing</li>
               <li><b>Two-finger drag</b> — pinch to zoom / pan</li>
               <li><b>Space</b> / middle-drag — pan</li>

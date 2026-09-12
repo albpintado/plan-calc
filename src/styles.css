@@ -672,3 +672,60 @@ button.danger:hover:not(:disabled) {
     transform: rotate(360deg);
   }
 }
+
+.field-unit {
+  align-self: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.quantities {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  margin-bottom: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.quantities .q-label {
+  color: var(--text-dim);
+}
+
+.quantities .q-value {
+  text-align: right;
+}
+
+.quantities .q-section {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  color: var(--text);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.list li input,
+.list li select {
+  min-width: 0;
+  padding: 2px 5px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+}
+
+.list li input.name {
+  flex: 1;
+}
+
+.list li select {
+  max-width: 46%;
+}
+
+.list li .metric {
+  color: var(--text-dim);
+  white-space: nowrap;
+}

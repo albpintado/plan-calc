@@ -9,6 +9,7 @@ import {
   pxToMm,
 } from './measure.js';
 import { makeTransform } from './viewport.js';
+import { openingType } from './model.js';
 
 export const COLORS = {
   background: '#0e1116',
@@ -22,6 +23,10 @@ export const COLORS = {
   areaFill: 'rgba(63, 185, 80, 0.18)',
   areaActive: '#ff5d55',
   areaActiveFill: 'rgba(255, 93, 85, 0.24)',
+  wall: '#a371f7',
+  wallFill: 'rgba(163, 113, 247, 0.35)',
+  opening: '#2dd4bf',
+  openingFill: 'rgba(45, 212, 191, 0.3)',
 };
 
 const TICK = 9;
@@ -112,6 +117,64 @@ function drawSegment(ctx, transform, a, b, color, text, dashed = false, labelOff
   ctx.restore();
 }
 
+function drawWall(ctx, transform, wall, thicknessPx, color, text, selected) {
+  const a = transform.toScreen(wall.a);
+  const b = transform.toScreen(wall.b);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const nx = -dy / length;
+  const ny = dx / length;
+  const half = Math.max(1, transform.lengthToScreen(thicknessPx) / 2);
+  ctx.save();
+  if (thicknessPx > 0) {
+    ctx.beginPath();
+    ctx.moveTo(a.x + nx * half, a.y + ny * half);
+    ctx.lineTo(b.x + nx * half, b.y + ny * half);
+    ctx.lineTo(b.x - nx * half, b.y - ny * half);
+    ctx.lineTo(a.x - nx * half, a.y - ny * half);
+    ctx.closePath();
+    ctx.fillStyle = selected ? COLORS.areaActiveFill : COLORS.wallFill;
+    ctx.fill();
+  }
+  ctx.strokeStyle = color;
+  ctx.lineWidth = selected ? 3 : 2;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.restore();
+  if (text) {
+    const angle = Math.atan2(dy, dx);
+    const perpendicular = angle + Math.PI / 2;
+    let ox = Math.cos(perpendicular);
+    let oy = Math.sin(perpendicular);
+    if (oy < 0) {
+      ox = -ox;
+      oy = -oy;
+    }
+    drawLabel(ctx, (a.x + b.x) / 2 + ox * 16, (a.y + b.y) / 2 + oy * 16, text, angle, color);
+  }
+}
+
+function drawOpening(ctx, transform, opening, color, text, selected) {
+  const a = transform.toScreen(opening.a);
+  const b = transform.toScreen(opening.b);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = selected ? 5 : 4;
+  ctx.setLineDash([2, 3]);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.restore();
+  if (text) {
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    drawLabel(ctx, (a.x + b.x) / 2, (a.y + b.y) / 2, text, angle, color);
+  }
+}
+
 function tracePolygon(ctx, screenPoints, close) {
   ctx.beginPath();
   ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
@@ -145,6 +208,11 @@ function areaText(points, calibration) {
     return formatArea(squareMeters);
   }
   return `${polygonArea(points).toFixed(0)} px²`;
+}
+
+function spaceLabel(area, calibration) {
+  const base = areaText(area.points, calibration);
+  return area.name ? `${area.name} · ${base}` : base;
 }
 
 function drawArea(ctx, transform, points, options) {
@@ -306,8 +374,29 @@ export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
       drawArea(ctx, transform, area.points, {
         stroke: selected ? COLORS.areaActive : COLORS.area,
         fill: selected ? COLORS.areaActiveFill : COLORS.areaFill,
-        label: areaText(area.points, state.calibration),
+        label: spaceLabel(area, state.calibration),
       });
+    }
+  }
+
+  if (layers.wall) {
+    const pxPerMeter = state.calibration?.pxPerMeter || 0;
+    for (const wall of state.walls || []) {
+      const selected = wall.id === state.selectedId;
+      const thicknessPx = ((wall.thickness || 0) / 1000) * pxPerMeter;
+      const mm = pxToMm(distance(wall.a, wall.b), pxPerMeter);
+      const text = state.calibration ? formatDimension(mm) : 'no scale';
+      drawWall(ctx, transform, wall, thicknessPx, selected ? COLORS.measureActive : COLORS.wall, text, selected);
+    }
+  }
+
+  if (layers.opening) {
+    for (const opening of state.openings || []) {
+      const selected = opening.id === state.selectedId;
+      const item = openingType(opening.type);
+      const mm = pxToMm(distance(opening.a, opening.b), state.calibration?.pxPerMeter);
+      const label = state.calibration ? `${item.label} ${formatDimension(mm)}` : item.label;
+      drawOpening(ctx, transform, opening, selected ? COLORS.measureActive : COLORS.opening, label, selected);
     }
   }
 
@@ -334,22 +423,28 @@ export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
         22,
       );
     }
+  }
 
-    if (state.preview) {
-      const { a, b } = state.preview;
-      const mm = pxToMm(distance(a, b), state.calibration?.pxPerMeter);
-      const text = state.calibration ? formatDimension(mm) : 'set scale first';
-      drawSegment(ctx, transform, a, b, COLORS.preview, text, true, 16);
-    }
+  const previewLayer =
+    state.tool === 'wall' ? 'wall' : state.tool === 'opening' ? 'opening' : 'measure';
+  if (state.preview && layers[previewLayer]) {
+    const { a, b } = state.preview;
+    const mm = pxToMm(distance(a, b), state.calibration?.pxPerMeter);
+    const text = state.calibration ? formatDimension(mm) : 'set scale first';
+    drawSegment(ctx, transform, a, b, COLORS.preview, text, true, 16);
   }
 
   if (layers.area) {
     drawAreaDraft(ctx, transform, state.areaDraft || [], state.areaCursor, state.calibration);
   }
 
-  if (layers.measure && typeof state.selectedId === 'number') {
-    const selectedMeasurement = state.measurements.find((m) => m.id === state.selectedId);
-    if (selectedMeasurement) drawEditHandles(ctx, transform, selectedMeasurement);
+  if (typeof state.selectedId === 'number') {
+    const measurement = state.measurements.find((m) => m.id === state.selectedId);
+    if (measurement && layers.measure) drawEditHandles(ctx, transform, measurement);
+    const wall = (state.walls || []).find((w) => w.id === state.selectedId);
+    if (wall && layers.wall) drawEditHandles(ctx, transform, wall);
+    const opening = (state.openings || []).find((o) => o.id === state.selectedId);
+    if (opening && layers.opening) drawEditHandles(ctx, transform, opening);
   }
 
   if (state.snap) {
