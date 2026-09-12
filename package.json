@@ -1,0 +1,19 @@
+{
+  "name": "plan-calc",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Local-first plan measurement tool: calibrate a graphic scale, then paint real millimeter dimensions (cotas) over an image or PDF.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.4.149"
+  },
+  "devDependencies": {
+    "vite": "^7.1.7"
+  }
+}

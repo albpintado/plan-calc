@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>plan-calc — local plan measurement</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="toolbar">
+        <div class="brand">plan-calc</div>
+        <button id="openBtn" class="primary" title="Open a plan image or PDF">Open</button>
+        <input id="fileInput" type="file" accept="image/*,application/pdf" hidden />
+        <button id="panelToggle" class="ghost" aria-pressed="false" title="Show or hide the info panel">
+          Info<span id="panelCount" class="count-badge" hidden>0</span>
+        </button>
+
+        <span class="divider"></span>
+        <div class="tools" role="group" aria-label="Tools">
+          <button id="toolSelect" data-tool="select" class="tool active" title="Pan and select (1)">Pan <kbd>1</kbd></button>
+          <button id="toolCalibrate" data-tool="calibrate" class="tool" title="Calibrate scale (2)">Calibrate <kbd>2</kbd></button>
+          <button id="toolMeasure" data-tool="measure" class="tool" title="Draw dimension (3)">Dimension <kbd>3</kbd></button>
+        </div>
+
+        <span class="divider"></span>
+        <button id="snapToggle" class="ghost" aria-pressed="false" title="Snap dimensions to horizontal, vertical and existing lines (S)">Snap</button>
+
+        <span class="divider"></span>
+        <div class="pages">
+          <button id="pagePrev" title="Previous page">‹</button>
+          <span id="pageInfo">–</span>
+          <button id="pageNext" title="Next page">›</button>
+        </div>
+
+        <div class="spacer"></div>
+
+        <span id="zoomInfo" class="zoom">100%</span>
+        <button id="fitBtn" title="Fit to screen (F)">Fit</button>
+        <button id="undoBtn" title="Undo (Ctrl+Z)">Undo</button>
+        <button id="exportBtn" title="Export annotated PNG">Export</button>
+      </header>
+
+      <main class="workspace">
+        <canvas id="canvas"></canvas>
+        <button id="deleteHandle" class="delete-handle" hidden title="Delete">×</button>
+
+        <aside class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Info</span>
+            <button id="panelClose" class="icon-btn" title="Close panel">×</button>
+          </div>
+
+          <section>
+            <h2>Scale</h2>
+            <div id="calibrateStatus" class="badge warn">Not calibrated</div>
+            <p class="hint">
+              Pick <b>Calibrate</b> (2), drag across the graphic scale bar on the plan, then type
+              its real length.
+            </p>
+            <button id="resetCalibration" class="ghost small" hidden>Reset calibration</button>
+          </section>
+
+          <section>
+            <h2>Dimensions <span id="measureCount" class="count">0</span></h2>
+            <div class="panel-actions">
+              <button id="deleteBtn" class="ghost small" disabled>Delete selected</button>
+              <button id="clearBtn" class="ghost small" disabled>Clear all</button>
+            </div>
+            <ul id="measurementList" class="list"></ul>
+            <div id="totalRow" class="total" hidden><span>Total</span><b id="totalValue">0 mm</b></div>
+          </section>
+
+          <section>
+            <h2>Help</h2>
+            <ul class="help">
+              <li><b>Drag</b> — draw a dimension</li>
+              <li><b>Shift</b> — lock to 45° steps</li>
+              <li><b>Snap</b> (S) — align to grid and existing lines</li>
+              <li><b>Click</b> a line — shows × to delete</li>
+              <li><b>Two-finger drag</b> — pinch to zoom / pan</li>
+              <li><b>Space</b> / middle-drag — pan</li>
+              <li><b>Wheel</b> — zoom at cursor</li>
+              <li><b>Delete</b> — remove selected</li>
+              <li><b>Ctrl+Z</b> — undo</li>
+              <li><b>F</b> — fit to screen</li>
+              <li><b>H</b> — show / hide this panel</li>
+            </ul>
+          </section>
+        </aside>
+      </main>
+
+      <div id="calibDialog" class="dialog" hidden>
+        <label for="calibInput">Real length the calibration bar represents</label>
+        <div class="dialog-row">
+          <input id="calibInput" type="number" min="0" step="any" inputmode="decimal" />
+          <select id="calibUnit">
+            <option value="m">m</option>
+            <option value="cm">cm</option>
+            <option value="mm">mm</option>
+            <option value="ft">ft</option>
+            <option value="in">in</option>
+          </select>
+        </div>
+        <p class="dialog-hint">
+          Distance in the real world, not the size on screen. If the bar runs 0 to 1 m, type 1.
+        </p>
+        <div class="dialog-actions">
+          <button id="calibCancel" class="ghost">Cancel</button>
+          <button id="calibOk" class="primary">Set scale</button>
+        </div>
+        <div id="calibError" class="dialog-error" hidden></div>
+      </div>
+
+      <div id="status" class="status"></div>
+
+      <div id="confirmBackdrop" class="confirm-backdrop" hidden>
+        <div class="confirm" role="dialog" aria-modal="true">
+          <p id="confirmText">Delete?</p>
+          <div class="confirm-actions">
+            <button id="confirmCancel" class="ghost">Cancel</button>
+            <button id="confirmOk" class="danger">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
