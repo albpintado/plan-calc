@@ -13,9 +13,13 @@ import {
   nearestPointOnSegment,
   niceScaleBar,
   normalizeAngle,
+  pointInPolygon,
+  polygonArea,
+  polygonCentroid,
   pxToMm,
   snapToDirections,
   toMeters,
+  formatArea,
 } from '../src/measure.js';
 
 test('distance is euclidean', () => {
@@ -145,4 +149,32 @@ test('end-to-end: scale bar then a wall dimension', () => {
   assert.equal(pxPerMeter, 50);
   const mm = pxToMm(distance({ x: 10, y: 10 }, { x: 10, y: 1740 }), pxPerMeter);
   assert.equal(Math.round(mm), 34600);
+});
+
+test('polygonArea uses the shoelace formula', () => {
+  assert.equal(polygonArea([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]), 100);
+  assert.equal(polygonArea([{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }]), 6);
+  assert.equal(polygonArea([{ x: 0, y: 0 }, { x: 1, y: 1 }]), 0);
+});
+
+test('pointInPolygon detects inside and outside', () => {
+  const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+  assert.equal(pointInPolygon({ x: 5, y: 5 }, square), true);
+  assert.equal(pointInPolygon({ x: 15, y: 5 }, square), false);
+});
+
+test('polygonCentroid averages the vertices', () => {
+  assert.deepEqual(polygonCentroid([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]), {
+    x: 5,
+    y: 5,
+  });
+});
+
+test('area in square metres from pixels', () => {
+  const pxPerMeter = 50;
+  const areaPx2 = polygonArea([{ x: 0, y: 0 }, { x: 500, y: 0 }, { x: 500, y: 250 }, { x: 0, y: 250 }]);
+  const squareMeters = areaPx2 / (pxPerMeter * pxPerMeter);
+  assert.equal(squareMeters, 50);
+  assert.equal(formatArea(squareMeters, 'en-US'), '50.00 m²');
+  assert.equal(formatArea(0.0035, 'en-US'), '35 cm²');
 });

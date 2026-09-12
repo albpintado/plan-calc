@@ -21,6 +21,7 @@
           <button id="toolSelect" data-tool="select" class="tool active" title="Pan and select (1)">Pan <kbd>1</kbd></button>
           <button id="toolCalibrate" data-tool="calibrate" class="tool" title="Calibrate scale (2)">Calibrate <kbd>2</kbd></button>
           <button id="toolMeasure" data-tool="measure" class="tool" title="Draw dimension (3)">Dimension <kbd>3</kbd></button>
+          <button id="toolArea" data-tool="area" class="tool" title="Draw area (4)">Area <kbd>4</kbd></button>
         </div>
 
         <span class="divider"></span>
@@ -75,9 +76,16 @@
           </section>
 
           <section>
+            <h2>Areas <span id="areaCount" class="count">0</span></h2>
+            <ul id="areaList" class="list"></ul>
+            <div id="areaTotalRow" class="total" hidden><span>Total</span><b id="areaTotal">0 m²</b></div>
+          </section>
+
+          <section>
             <h2>Help</h2>
             <ul class="help">
               <li><b>Drag</b> — draw a dimension</li>
+              <li><b>Area</b> — tap points, tap the first to close</li>
               <li><b>Shift</b> — lock to 45° steps</li>
               <li><b>Snap</b> (S) — align to grid and existing lines</li>
               <li><b>Click</b> a line — shows × to delete</li>

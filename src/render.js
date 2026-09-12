@@ -1,4 +1,13 @@
-import { distance, formatDimension, formatLength, niceScaleBar, pxToMm } from './measure.js';
+import {
+  distance,
+  formatArea,
+  formatDimension,
+  formatLength,
+  niceScaleBar,
+  polygonArea,
+  polygonCentroid,
+  pxToMm,
+} from './measure.js';
 import { makeTransform } from './viewport.js';
 
 export const COLORS = {
@@ -9,6 +18,10 @@ export const COLORS = {
   preview: '#7ee787',
   snap: '#ff2d95',
   scaleBar: '#e6edf3',
+  area: '#3fb950',
+  areaFill: 'rgba(63, 185, 80, 0.18)',
+  areaActive: '#ff5d55',
+  areaActiveFill: 'rgba(255, 93, 85, 0.24)',
 };
 
 const TICK = 9;
@@ -99,6 +112,95 @@ function drawSegment(ctx, transform, a, b, color, text, dashed = false, labelOff
   ctx.restore();
 }
 
+function tracePolygon(ctx, screenPoints, close) {
+  ctx.beginPath();
+  ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+  for (let i = 1; i < screenPoints.length; i += 1) {
+    ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
+  }
+  if (close) ctx.closePath();
+}
+
+function drawVertices(ctx, screenPoints, color, highlightFirst) {
+  ctx.save();
+  ctx.fillStyle = color;
+  for (let i = 0; i < screenPoints.length; i += 1) {
+    ctx.beginPath();
+    ctx.arc(screenPoints[i].x, screenPoints[i].y, i === 0 && highlightFirst ? 6 : 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (highlightFirst) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(screenPoints[0].x, screenPoints[0].y, 10, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function areaText(points, calibration) {
+  if (calibration) {
+    const squareMeters = polygonArea(points) / (calibration.pxPerMeter * calibration.pxPerMeter);
+    return formatArea(squareMeters);
+  }
+  return `${polygonArea(points).toFixed(0)} px²`;
+}
+
+function drawArea(ctx, transform, points, options) {
+  if (points.length < 3) return;
+  const screenPoints = points.map((point) => transform.toScreen(point));
+  ctx.save();
+  tracePolygon(ctx, screenPoints, true);
+  ctx.fillStyle = options.fill;
+  ctx.fill();
+  ctx.strokeStyle = options.stroke;
+  ctx.lineWidth = 2;
+  if (options.dashed) ctx.setLineDash([6, 5]);
+  ctx.stroke();
+  ctx.restore();
+  drawVertices(ctx, screenPoints, options.stroke, false);
+  const center = transform.toScreen(polygonCentroid(points));
+  drawLabel(ctx, center.x, center.y, options.label, 0, options.stroke);
+}
+
+function drawAreaDraft(ctx, transform, draft, cursor, calibration) {
+  if (!draft.length) return;
+  const screenPoints = draft.map((point) => transform.toScreen(point));
+  const closed = draft.length >= 3 ? [...draft, draft[0]] : draft;
+  const previewPoints = closed.map((point) => transform.toScreen(point));
+  ctx.save();
+  if (draft.length >= 3) {
+    tracePolygon(ctx, previewPoints, true);
+    ctx.fillStyle = COLORS.areaFill;
+    ctx.fill();
+  }
+  ctx.strokeStyle = COLORS.area;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 5]);
+  tracePolygon(ctx, previewPoints, false);
+  ctx.stroke();
+  if (cursor && draft.length) {
+    const last = screenPoints[screenPoints.length - 1];
+    ctx.strokeStyle = COLORS.preview;
+    ctx.beginPath();
+    ctx.moveTo(last.x, last.y);
+    const cursorScreen = transform.toScreen(cursor);
+    ctx.lineTo(cursorScreen.x, cursorScreen.y);
+    if (draft.length >= 2) {
+      ctx.lineTo(screenPoints[0].x, screenPoints[0].y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+  drawVertices(ctx, screenPoints, COLORS.area, true);
+  const areaPoints = draft.length >= 3 ? draft : [...draft, ...(cursor ? [cursor] : [])];
+  if (areaPoints.length >= 3) {
+    const center = transform.toScreen(polygonCentroid(areaPoints));
+    drawLabel(ctx, center.x, center.y, areaText(areaPoints, calibration), 0, COLORS.area);
+  }
+}
+
 function drawScaleBar(ctx, state, canvasHeight) {
   if (!state.calibration) return;
   const bar = niceScaleBar(state.calibration.pxPerMeter * state.view.scale, 140);
@@ -172,6 +274,15 @@ export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
     );
   }
 
+  for (const area of state.areas) {
+    const selected = area.id === state.selectedId;
+    drawArea(ctx, transform, area.points, {
+      stroke: selected ? COLORS.areaActive : COLORS.area,
+      fill: selected ? COLORS.areaActiveFill : COLORS.areaFill,
+      label: areaText(area.points, state.calibration),
+    });
+  }
+
   for (const measurement of state.measurements) {
     const selected = measurement.id === state.selectedId;
     const color = selected ? COLORS.measureActive : COLORS.measure;
@@ -201,6 +312,8 @@ export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
     const text = state.calibration ? formatDimension(mm) : 'set scale first';
     drawSegment(ctx, transform, a, b, COLORS.preview, text, true, 16);
   }
+
+  drawAreaDraft(ctx, transform, state.areaDraft || [], state.areaCursor, state.calibration);
 
   if (state.snap) {
     const p = transform.toScreen(state.snap);

@@ -4,8 +4,13 @@ import {
   distance,
   distanceToSegment,
   findSnapPoint,
+  formatArea,
   formatDimension,
   formatLength,
+  pointInPolygon,
+  polygonArea,
+  polygonCentroid,
+  polygonEdgeDistance,
   pxToMm,
   segmentAngle,
   snapToDirections,
@@ -47,6 +52,10 @@ const els = {
   measureCount: document.getElementById('measureCount'),
   totalRow: document.getElementById('totalRow'),
   totalValue: document.getElementById('totalValue'),
+  areaList: document.getElementById('areaList'),
+  areaCount: document.getElementById('areaCount'),
+  areaTotalRow: document.getElementById('areaTotalRow'),
+  areaTotal: document.getElementById('areaTotal'),
   calibDialog: document.getElementById('calibDialog'),
   calibInput: document.getElementById('calibInput'),
   calibUnit: document.getElementById('calibUnit'),
@@ -64,9 +73,12 @@ const state = {
   view: { scale: 1, tx: 0, ty: 0 },
   calibration: null,
   measurements: [],
+  areas: [],
   selectedId: null,
   preview: null,
   snap: null,
+  areaDraft: [],
+  areaCursor: null,
   tool: 'select',
   snapLines: false,
 };
@@ -97,6 +109,7 @@ function snapshot() {
       ? { ...state.calibration, a: { ...state.calibration.a }, b: { ...state.calibration.b } }
       : null,
     measurements: state.measurements.map((m) => ({ ...m, a: { ...m.a }, b: { ...m.b } })),
+    areas: state.areas.map((a) => ({ ...a, points: a.points.map((p) => ({ ...p })) })),
   };
 }
 
@@ -110,6 +123,7 @@ function undo() {
   if (!previous) return;
   state.calibration = previous.calibration;
   state.measurements = previous.measurements;
+  state.areas = previous.areas ?? [];
   state.selectedId = null;
   afterChange();
 }
@@ -120,29 +134,50 @@ function syncZoom() {
 
 function positionDeleteHandle() {
   const selected = state.selectedId;
-  let segment = null;
-  if (selected === 'calibration' && state.calibration) {
-    segment = state.calibration;
-  } else if (typeof selected === 'number') {
-    segment = state.measurements.find((m) => m.id === selected) || null;
-  }
-  if (!segment || !state.source) {
+  if (selected == null || !state.source) {
     els.deleteHandle.hidden = true;
     return;
   }
   const transform = makeTransform(state.view);
-  const a = transform.toScreen(segment.a);
-  const b = transform.toScreen(segment.b);
-  const midX = (a.x + b.x) / 2;
-  const midY = (a.y + b.y) / 2;
-  let ox = Math.cos(segmentAngle(segment.a, segment.b) + Math.PI / 2);
-  let oy = Math.sin(segmentAngle(segment.a, segment.b) + Math.PI / 2);
-  if (oy < 0) {
-    ox = -ox;
-    oy = -oy;
+  let handle = null;
+
+  if (selected === 'calibration' && state.calibration) {
+    const a = transform.toScreen(state.calibration.a);
+    const b = transform.toScreen(state.calibration.b);
+    let ox = Math.cos(segmentAngle(state.calibration.a, state.calibration.b) + Math.PI / 2);
+    let oy = Math.sin(segmentAngle(state.calibration.a, state.calibration.b) + Math.PI / 2);
+    if (oy < 0) {
+      ox = -ox;
+      oy = -oy;
+    }
+    handle = { x: (a.x + b.x) / 2 + ox * 48, y: (a.y + b.y) / 2 + oy * 48 };
+  } else if (typeof selected === 'number') {
+    const area = state.areas.find((a) => a.id === selected);
+    if (area) {
+      const center = transform.toScreen(polygonCentroid(area.points));
+      handle = { x: center.x, y: center.y };
+    } else {
+      const measurement = state.measurements.find((m) => m.id === selected);
+      if (measurement) {
+        const a = transform.toScreen(measurement.a);
+        const b = transform.toScreen(measurement.b);
+        let ox = Math.cos(segmentAngle(measurement.a, measurement.b) + Math.PI / 2);
+        let oy = Math.sin(segmentAngle(measurement.a, measurement.b) + Math.PI / 2);
+        if (oy < 0) {
+          ox = -ox;
+          oy = -oy;
+        }
+        handle = { x: (a.x + b.x) / 2 + ox * 48, y: (a.y + b.y) / 2 + oy * 48 };
+      }
+    }
   }
-  els.deleteHandle.style.left = `${midX + ox * 48}px`;
-  els.deleteHandle.style.top = `${midY + oy * 48}px`;
+
+  if (!handle) {
+    els.deleteHandle.hidden = true;
+    return;
+  }
+  els.deleteHandle.style.left = `${handle.x}px`;
+  els.deleteHandle.style.top = `${handle.y}px`;
   els.deleteHandle.hidden = false;
 }
 
@@ -255,6 +290,7 @@ function stashCurrentPage() {
   pageStore.set(currentPageKey(), {
     calibration: state.calibration,
     measurements: state.measurements,
+    areas: state.areas,
   });
 }
 
@@ -262,6 +298,7 @@ function loadPageAnnotations() {
   const saved = pageStore.get(currentPageKey());
   state.calibration = saved?.calibration ?? null;
   state.measurements = saved?.measurements ?? [];
+  state.areas = saved?.areas ?? [];
   state.selectedId = null;
 }
 
@@ -290,6 +327,8 @@ function getScreenPoint(event) {
 function snapPoints() {
   const points = [];
   for (const measurement of state.measurements) points.push(measurement.a, measurement.b);
+  for (const area of state.areas) points.push(...area.points);
+  points.push(...state.areaDraft);
   if (state.calibration) points.push(state.calibration.a, state.calibration.b);
   return points;
 }
@@ -317,6 +356,16 @@ function resolvePoint(screen, startImage, shiftKey) {
   return { point: raw, snapped: false };
 }
 
+function findArea(id) {
+  return state.areas.find((area) => area.id === id) || null;
+}
+
+function selectedLabel() {
+  if (state.selectedId === 'calibration') return 'calibration line';
+  if (findArea(state.selectedId)) return 'area';
+  return 'dimension';
+}
+
 function selectAt(imagePoint) {
   const tolerance = 8 / state.view.scale;
   let selected = null;
@@ -326,6 +375,14 @@ function selectAt(imagePoint) {
     if (d <= bestDistance) {
       bestDistance = d;
       selected = measurement.id;
+    }
+  }
+  for (const area of state.areas) {
+    const d = polygonEdgeDistance(imagePoint, area.points);
+    const inside = pointInPolygon(imagePoint, area.points);
+    if (inside || d <= bestDistance) {
+      bestDistance = inside ? 0 : d;
+      selected = area.id;
     }
   }
   if (state.calibration) {
@@ -342,8 +399,7 @@ function selectAt(imagePoint) {
 
 function openConfirmDelete() {
   if (state.selectedId == null) return;
-  els.confirmText.textContent =
-    state.selectedId === 'calibration' ? 'Delete the calibration line?' : 'Delete this dimension?';
+  els.confirmText.textContent = `Delete this ${selectedLabel()}?`;
   els.confirmBackdrop.hidden = false;
   els.confirmOk.focus();
 }
@@ -359,6 +415,8 @@ function confirmDelete() {
   pushHistory();
   if (selected === 'calibration') {
     state.calibration = null;
+  } else if (findArea(selected)) {
+    state.areas = state.areas.filter((area) => area.id !== selected);
   } else {
     state.measurements = state.measurements.filter((m) => m.id !== selected);
   }
@@ -366,10 +424,11 @@ function confirmDelete() {
   afterChange();
 }
 
-function clearDimensions() {
-  if (!state.measurements.length) return;
+function clearAnnotations() {
+  if (!state.measurements.length && !state.areas.length) return;
   pushHistory();
   state.measurements = [];
+  state.areas = [];
   state.selectedId = null;
   afterChange();
 }
@@ -389,6 +448,71 @@ function toast(message, isError = false) {
   statusTimer = setTimeout(() => els.status.classList.remove('show'), 2600);
 }
 
+function maybeCommitArea() {
+  if (state.areaDraft.length >= 3) {
+    commitArea();
+    return true;
+  }
+  if (state.areaDraft.length) {
+    cancelArea();
+    return true;
+  }
+  return false;
+}
+
+function areaText(points) {
+  if (state.calibration) {
+    const squareMeters = polygonArea(points) / (state.calibration.pxPerMeter * state.calibration.pxPerMeter);
+    return formatArea(squareMeters);
+  }
+  return `${polygonArea(points).toFixed(0)} px²`;
+}
+
+function commitArea() {
+  if (state.areaDraft.length < 3) {
+    cancelArea();
+    return;
+  }
+  pushHistory();
+  state.areas.push({ id: nextId++, points: state.areaDraft.map((point) => ({ ...point })) });
+  state.areaDraft = [];
+  state.areaCursor = null;
+  state.snap = null;
+  afterChange();
+}
+
+function cancelArea() {
+  state.areaDraft = [];
+  state.areaCursor = null;
+  state.snap = null;
+  requestRender();
+  syncUI();
+}
+
+function handleAreaTap(screen) {
+  const result = resolvePoint(screen, null, false);
+  const point = result.point;
+  if (!state.areaDraft.length) {
+    state.areaDraft = [point];
+    state.areaCursor = point;
+    state.snap = null;
+    requestRender();
+    syncUI();
+    return;
+  }
+  const first = state.areaDraft[0];
+  const tolerance = 14 / state.view.scale;
+  if (state.areaDraft.length >= 3 && distance(point, first) <= tolerance) {
+    commitArea();
+    return;
+  }
+  state.areaDraft.push(point);
+  state.areaCursor = point;
+  state.snap = null;
+  requestRender();
+  syncUI();
+}
+
 async function openFile(file) {
   try {
     toast('Loading…');
@@ -399,6 +523,9 @@ async function openFile(file) {
     history.length = 0;
     state.calibration = null;
     state.measurements = [];
+    state.areas = [];
+    state.areaDraft = [];
+    state.areaCursor = null;
     state.selectedId = null;
     state.preview = null;
     state.snap = null;
@@ -550,6 +677,17 @@ function onPointerDown(event) {
     return;
   }
 
+  if (state.tool === 'area') {
+    drag = {
+      mode: 'area',
+      pointerId: event.pointerId,
+      startScreen: screen,
+      startView: { ...state.view },
+      moved: false,
+    };
+    return;
+  }
+
   const start = resolvePoint(screen, null, event.shiftKey);
   drag = {
     mode: state.tool,
@@ -589,11 +727,31 @@ function onPointerMove(event) {
       const result = resolvePoint(screen, null, event.shiftKey);
       state.snap = result.snapped ? result.point : null;
       requestRender();
+    } else if (state.tool === 'area') {
+      const result = resolvePoint(screen, null, event.shiftKey);
+      state.areaCursor = result.point;
+      state.snap = result.snapped ? result.point : null;
+      requestRender();
     }
     return;
   }
 
   if (drag.pointerId !== event.pointerId) return;
+
+  if (drag.mode === 'area') {
+    const dx = screen.x - drag.startScreen.x;
+    const dy = screen.y - drag.startScreen.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) {
+      drag.moved = true;
+      state.view = {
+        scale: drag.startView.scale,
+        tx: drag.startView.tx + dx,
+        ty: drag.startView.ty + dy,
+      };
+      requestRender();
+    }
+    return;
+  }
 
   if (drag.mode === 'pan') {
     const dx = screen.x - drag.startScreen.x;
@@ -635,6 +793,11 @@ function onPointerUp(event) {
   const finished = drag;
   drag = null;
   els.canvas.style.cursor = state.tool === 'select' ? 'grab' : 'crosshair';
+
+  if (finished.mode === 'area') {
+    if (!finished.moved) handleAreaTap(finished.startScreen);
+    return;
+  }
 
   if (finished.mode === 'pan') {
     if (!finished.moved && finished.wasSelect) {
@@ -734,11 +897,18 @@ function cancelZoomAnimation() {
 }
 
 function setTool(tool) {
+  const leavingArea = state.tool === 'area' && tool !== 'area';
   state.tool = tool;
   state.preview = null;
   state.snap = null;
   hideLoupe();
   els.canvas.style.cursor = tool === 'select' ? 'grab' : 'crosshair';
+  if (leavingArea && state.areaDraft.length) {
+    maybeCommitArea();
+  }
+  if (tool === 'area' && !state.areaDraft.length) {
+    toast('Tap points on the plan, then tap the first point to close');
+  }
   syncUI();
 }
 
@@ -789,6 +959,42 @@ function buildMeasurementList() {
   });
 }
 
+function buildAreaList() {
+  els.areaList.textContent = '';
+  state.areas.forEach((area, index) => {
+    const item = document.createElement('li');
+    item.className = area.id === state.selectedId ? 'active' : '';
+
+    const idx = document.createElement('span');
+    idx.className = 'idx';
+    idx.textContent = `#${index + 1}`;
+
+    const value = document.createElement('span');
+    value.className = 'value';
+    value.textContent = areaText(area.points);
+
+    const remove = document.createElement('button');
+    remove.className = 'remove';
+    remove.textContent = '×';
+    remove.title = 'Remove';
+    remove.addEventListener('click', (event) => {
+      event.stopPropagation();
+      pushHistory();
+      state.areas = state.areas.filter((a) => a.id !== area.id);
+      if (state.selectedId === area.id) state.selectedId = null;
+      afterChange();
+    });
+
+    item.append(idx, value, remove);
+    item.addEventListener('click', () => {
+      state.selectedId = area.id;
+      requestRender();
+      syncUI();
+    });
+    els.areaList.append(item);
+  });
+}
+
 function syncUI() {
   for (const button of els.toolButtons) {
     button.classList.toggle('active', button.dataset.tool === state.tool);
@@ -817,8 +1023,8 @@ function syncUI() {
   }
 
   els.measureCount.textContent = String(state.measurements.length);
-  els.panelCount.textContent = String(state.measurements.length);
-  els.panelCount.hidden = state.measurements.length === 0;
+  els.panelCount.textContent = String(state.measurements.length + state.areas.length);
+  els.panelCount.hidden = state.measurements.length + state.areas.length === 0;
   buildMeasurementList();
 
   if (state.calibration && state.measurements.length > 1) {
@@ -832,9 +1038,22 @@ function syncUI() {
     els.totalRow.hidden = true;
   }
 
+  els.areaCount.textContent = String(state.areas.length);
+  buildAreaList();
+  if (state.calibration && state.areas.length > 1) {
+    const totalArea = state.areas.reduce(
+      (sum, area) => sum + polygonArea(area.points) / state.calibration.pxPerMeter ** 2,
+      0,
+    );
+    els.areaTotal.textContent = formatArea(totalArea);
+    els.areaTotalRow.hidden = false;
+  } else {
+    els.areaTotalRow.hidden = true;
+  }
+
   els.undoBtn.disabled = history.length === 0;
   els.deleteBtn.disabled = state.selectedId == null;
-  els.clearBtn.disabled = state.measurements.length === 0;
+  els.clearBtn.disabled = state.measurements.length === 0 && state.areas.length === 0;
   els.exportBtn.disabled = !state.source;
 }
 
@@ -890,7 +1109,7 @@ function bindEvents() {
   });
   els.undoBtn.addEventListener('click', undo);
   els.deleteBtn.addEventListener('click', openConfirmDelete);
-  els.clearBtn.addEventListener('click', clearDimensions);
+  els.clearBtn.addEventListener('click', clearAnnotations);
   els.exportBtn.addEventListener('click', exportPng);
   els.resetCalibration.addEventListener('click', resetCalibration);
 
@@ -934,7 +1153,11 @@ function bindEvents() {
     if (event.key === '1') setTool('select');
     else if (event.key === '2') setTool('calibrate');
     else if (event.key === '3') setTool('measure');
-    else if (event.key === 's' || event.key === 'S') setSnapLines(!state.snapLines);
+    else if (event.key === '4') setTool('area');
+    else if (event.key === 'Enter' && state.tool === 'area' && state.areaDraft.length >= 3) {
+      commitArea();
+      event.preventDefault();
+    } else if (event.key === 's' || event.key === 'S') setSnapLines(!state.snapLines);
     else if (event.key === 'f' || event.key === 'F') {
       fitViewToCanvas();
       afterChange();
@@ -948,7 +1171,9 @@ function bindEvents() {
       event.preventDefault();
     } else if (event.key === 'Escape') {
       closeCalibrationDialog();
-      if (drag) {
+      if (state.areaDraft.length) {
+        cancelArea();
+      } else if (drag) {
         drag = null;
         state.preview = null;
         state.snap = null;

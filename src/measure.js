@@ -113,6 +113,64 @@ export function segmentMidpoint(a, b) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
+export function polygonArea(points) {
+  if (!points || points.length < 3) return 0;
+  let sum = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const current = points[i];
+    const next = points[(i + 1) % points.length];
+    sum += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(sum) / 2;
+}
+
+export function polygonCentroid(points) {
+  if (!points || !points.length) return { x: 0, y: 0 };
+  let x = 0;
+  let y = 0;
+  for (const point of points) {
+    x += point.x;
+    y += point.y;
+  }
+  return { x: x / points.length, y: y / points.length };
+}
+
+export function pointInPolygon(point, points) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i, i += 1) {
+    const xi = points[i].x;
+    const yi = points[i].y;
+    const xj = points[j].x;
+    const yj = points[j].y;
+    const crosses = yi > point.y !== yj > point.y;
+    if (crosses && point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+export function polygonEdgeDistance(point, points) {
+  let min = Infinity;
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    min = Math.min(min, distanceToSegment(point, a, b));
+  }
+  return min;
+}
+
+export function formatArea(squareMeters, locale = undefined) {
+  if (squareMeters == null || !Number.isFinite(squareMeters)) return '—';
+  if (squareMeters >= 0.01) {
+    return `${squareMeters.toLocaleString(locale, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} m²`;
+  }
+  return `${(squareMeters * 10000).toLocaleString(locale, { maximumFractionDigits: 1 })} cm²`;
+}
+
 export function findSnapPoint(pt, points, tolerance) {
   let best = null;
   let bestDistance = tolerance;

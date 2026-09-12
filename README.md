@@ -1,10 +1,11 @@
 # plan-calc
 
-Local-first tool to measure a plan and paint **real dimensions (cotas)** over it.
-Everything runs in your browser — no upload, no server, no network after install.
+Local-first tool to measure a plan and paint **real dimensions (cotas) and areas** over
+it. Everything runs in your browser — no upload, no server, no network after install.
 
 Use it when a plan only carries a **graphic scale**: calibrate once against that
-scale bar, then drag dimensions anywhere on the plan and read them in **millimetres**.
+scale bar, then draw dimensions and areas anywhere on the plan and read them in
+**millimetres** and **square metres**.
 
 ## Run
 
@@ -36,17 +37,21 @@ npm test
    mm. `Shift` locks the angle to 45° steps; endpoints snap to existing points. The
    **Snap** toggle (`S`) also snaps the angle to horizontal, vertical or any existing
    dimension/calibration line, so a diagonal drag still comes out parallel.
-4. **Select / delete** — with the Pan tool, click a dimension or the calibration line
-   to highlight it; a red `×` appears. Clicking it (or `Delete`) opens a small
-   confirmation before removing the line. Changes are undoable with `Ctrl+Z`.
-5. **Export PNG** — writes the annotated plan to a file. Projects (raster, calibration
-   and dimensions per page) are auto-saved in IndexedDB and restored on reload.
+4. **Area** (key `4`) — tap points to build a polygon and tap the first point (or press
+   `Enter`) to close it. The area is shown in m² (or cm² for small ones). Dragging pans,
+   and a second finger zooms, so it works one-handed on mobile.
+5. **Select / delete** — with the Pan tool, click a dimension, an area or the
+   calibration line to highlight it; a red `×` appears. Clicking it (or `Delete`) opens
+   a small confirmation before removing the line. Changes are undoable with `Ctrl+Z`.
+6. **Export PNG** — writes the annotated plan to a file. Projects (raster, calibration,
+   dimensions and areas per page) are auto-saved in IndexedDB and restored on reload.
 
 ## Keys and touch
 
 | Input | Action |
 | --- | --- |
-| `1` / `2` / `3` | Pan-Select / Calibrate / Dimension |
+| `1` / `2` / `3` / `4` | Pan-Select / Calibrate / Dimension / Area |
+| `Enter` (in Area) | Close the polygon |
 | `Shift` (while drawing) | Lock angle to 45° |
 | `S` | Toggle angle snap (grid + existing lines) |
 | Click a line | Select it (shows `×` to delete) |
