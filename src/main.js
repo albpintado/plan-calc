@@ -48,6 +48,9 @@ const els = {
   exportBtn: document.getElementById('exportBtn'),
   calibrateStatus: document.getElementById('calibrateStatus'),
   resetCalibration: document.getElementById('resetCalibration'),
+  knownValue: document.getElementById('knownValue'),
+  knownUnit: document.getElementById('knownUnit'),
+  knownSet: document.getElementById('knownSet'),
   measurementList: document.getElementById('measurementList'),
   measureCount: document.getElementById('measureCount'),
   totalRow: document.getElementById('totalRow'),
@@ -324,33 +327,35 @@ function getScreenPoint(event) {
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
-function snapPoints() {
+function snapPoints(excludeId = null) {
   const points = [];
-  for (const measurement of state.measurements) points.push(measurement.a, measurement.b);
+  for (const measurement of state.measurements) {
+    if (measurement.id !== excludeId) points.push(measurement.a, measurement.b);
+  }
   for (const area of state.areas) points.push(...area.points);
   points.push(...state.areaDraft);
   if (state.calibration) points.push(state.calibration.a, state.calibration.b);
   return points;
 }
 
-function referenceDirections() {
+function referenceDirections(excludeId = null) {
   const directions = [0, Math.PI / 2];
   for (const measurement of state.measurements) {
-    directions.push(segmentAngle(measurement.a, measurement.b));
+    if (measurement.id !== excludeId) directions.push(segmentAngle(measurement.a, measurement.b));
   }
   if (state.calibration) directions.push(segmentAngle(state.calibration.a, state.calibration.b));
   return directions;
 }
 
-function resolvePoint(screen, startImage, shiftKey) {
+function resolvePoint(screen, startImage, shiftKey, excludeId = null) {
   const transform = makeTransform(state.view);
   const raw = transform.toImage(screen);
   const tolerance = 10 / state.view.scale;
-  const snapped = findSnapPoint(raw, snapPoints(), tolerance);
+  const snapped = findSnapPoint(raw, snapPoints(excludeId), tolerance);
   if (snapped) return { point: snapped, snapped: true };
   if (shiftKey && startImage) return { point: constrainAngle(startImage, raw, 45), snapped: false };
   if (state.snapLines && startImage) {
-    const result = snapToDirections(startImage, raw, referenceDirections(), 0.22);
+    const result = snapToDirections(startImage, raw, referenceDirections(excludeId), 0.22);
     return { point: { x: result.x, y: result.y }, snapped: result.snapped };
   }
   return { point: raw, snapped: false };
@@ -358,6 +363,38 @@ function resolvePoint(screen, startImage, shiftKey) {
 
 function findArea(id) {
   return state.areas.find((area) => area.id === id) || null;
+}
+
+function findMeasurement(id) {
+  return state.measurements.find((measurement) => measurement.id === id) || null;
+}
+
+function setScaleFromSelected() {
+  const measurement = typeof state.selectedId === 'number' ? findMeasurement(state.selectedId) : null;
+  if (!measurement) {
+    toast('Select a dimension first', true);
+    return;
+  }
+  const value = Number.parseFloat(els.knownValue.value.replace(',', '.'));
+  const unit = els.knownUnit.value;
+  try {
+    const realMeters = toMeters(value, unit);
+    const pxPerMeter = computePxPerMeter(measurement.a, measurement.b, realMeters);
+    pushHistory();
+    state.calibration = {
+      a: { ...measurement.a },
+      b: { ...measurement.b },
+      realMeters,
+      value,
+      unit,
+      pxPerMeter,
+      source: 'known',
+    };
+    afterChange();
+    toast('Scale set from the selected dimension');
+  } catch (error) {
+    toast(error.message, true);
+  }
 }
 
 function selectedLabel() {
@@ -663,7 +700,40 @@ function onPointerDown(event) {
     return;
   }
 
-  const wantsPan = event.button === 1 || spaceDown || state.tool === 'select';
+  const forcePan = event.button === 1 || spaceDown;
+  if (!forcePan && state.tool === 'select') {
+    const measurement = typeof state.selectedId === 'number' ? findMeasurement(state.selectedId) : null;
+    if (measurement) {
+      const transform = makeTransform(state.view);
+      const a = transform.toScreen(measurement.a);
+      const b = transform.toScreen(measurement.b);
+      const hitRadius = 16;
+      const touch = event.pointerType !== 'mouse';
+      if (distance(screen, a) <= hitRadius) {
+        drag = { mode: 'edit', id: measurement.id, endpoint: 'a', pointerId: event.pointerId, moved: false, touch };
+        return;
+      }
+      if (distance(screen, b) <= hitRadius) {
+        drag = { mode: 'edit', id: measurement.id, endpoint: 'b', pointerId: event.pointerId, moved: false, touch };
+        return;
+      }
+      const image = transform.toImage(screen);
+      if (distanceToSegment(image, measurement.a, measurement.b) <= 12 / state.view.scale) {
+        drag = {
+          mode: 'editBody',
+          id: measurement.id,
+          pointerId: event.pointerId,
+          startImage: image,
+          original: { a: { ...measurement.a }, b: { ...measurement.b } },
+          moved: false,
+          touch,
+        };
+        return;
+      }
+    }
+  }
+
+  const wantsPan = forcePan || state.tool === 'select';
   if (wantsPan) {
     drag = {
       mode: 'pan',
@@ -738,6 +808,40 @@ function onPointerMove(event) {
 
   if (drag.pointerId !== event.pointerId) return;
 
+  if (drag.mode === 'edit') {
+    const measurement = findMeasurement(drag.id);
+    if (!measurement) return;
+    const other = drag.endpoint === 'a' ? measurement.b : measurement.a;
+    const result = resolvePoint(screen, other, event.shiftKey, drag.id);
+    if (!drag.moved) {
+      pushHistory();
+      drag.moved = true;
+    }
+    measurement[drag.endpoint] = result.point;
+    state.snap = result.snapped ? result.point : null;
+    requestRender();
+    syncUI();
+    if (drag.touch) updateLoupe(screen, result.point);
+    return;
+  }
+
+  if (drag.mode === 'editBody') {
+    const measurement = findMeasurement(drag.id);
+    if (!measurement) return;
+    const image = makeTransform(state.view).toImage(screen);
+    const dx = image.x - drag.startImage.x;
+    const dy = image.y - drag.startImage.y;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 0) {
+      pushHistory();
+      drag.moved = true;
+    }
+    measurement.a = { x: drag.original.a.x + dx, y: drag.original.a.y + dy };
+    measurement.b = { x: drag.original.b.x + dx, y: drag.original.b.y + dy };
+    requestRender();
+    syncUI();
+    return;
+  }
+
   if (drag.mode === 'area') {
     const dx = screen.x - drag.startScreen.x;
     const dy = screen.y - drag.startScreen.y;
@@ -793,6 +897,12 @@ function onPointerUp(event) {
   const finished = drag;
   drag = null;
   els.canvas.style.cursor = state.tool === 'select' ? 'grab' : 'crosshair';
+
+  if (finished.mode === 'edit' || finished.mode === 'editBody') {
+    state.snap = null;
+    afterChange();
+    return;
+  }
 
   if (finished.mode === 'area') {
     if (!finished.moved) handleAreaTap(finished.startScreen);
@@ -1022,6 +1132,8 @@ function syncUI() {
     els.resetCalibration.hidden = true;
   }
 
+  els.knownSet.disabled = !(typeof state.selectedId === 'number' && findMeasurement(state.selectedId));
+
   els.measureCount.textContent = String(state.measurements.length);
   els.panelCount.textContent = String(state.measurements.length + state.areas.length);
   els.panelCount.hidden = state.measurements.length + state.areas.length === 0;
@@ -1112,6 +1224,10 @@ function bindEvents() {
   els.clearBtn.addEventListener('click', clearAnnotations);
   els.exportBtn.addEventListener('click', exportPng);
   els.resetCalibration.addEventListener('click', resetCalibration);
+  els.knownSet.addEventListener('click', setScaleFromSelected);
+  els.knownValue.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') setScaleFromSelected();
+  });
 
   els.snapToggle.addEventListener('click', () => setSnapLines(!state.snapLines));
   els.deleteHandle.addEventListener('click', openConfirmDelete);

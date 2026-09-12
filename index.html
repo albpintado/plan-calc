@@ -59,9 +59,23 @@
             <h2>Scale</h2>
             <div id="calibrateStatus" class="badge warn">Not calibrated</div>
             <p class="hint">
-              Pick <b>Calibrate</b> (2), drag across the graphic scale bar on the plan, then type
-              its real length.
+              <b>Graphic scale:</b> pick <b>Calibrate</b> (2), drag across the scale bar (or any
+              length you know) and type its real value.
             </p>
+            <p class="hint">
+              <b>Known dimension:</b> select a dimension, enter its real length and press Set.
+            </p>
+            <div class="dialog-row">
+              <input id="knownValue" type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 4" />
+              <select id="knownUnit">
+                <option value="m">m</option>
+                <option value="cm">cm</option>
+                <option value="mm">mm</option>
+                <option value="ft">ft</option>
+                <option value="in">in</option>
+              </select>
+              <button id="knownSet" class="primary small" disabled>Set</button>
+            </div>
             <button id="resetCalibration" class="ghost small" hidden>Reset calibration</button>
           </section>
 
@@ -89,6 +103,7 @@
               <li><b>Shift</b> — lock to 45° steps</li>
               <li><b>Snap</b> (S) — align to grid and existing lines</li>
               <li><b>Click</b> a line — shows × to delete</li>
+              <li><b>Select</b> a dimension — drag its ends or body to edit</li>
               <li><b>Touch</b> — a magnifier follows your finger while drawing</li>
               <li><b>Two-finger drag</b> — pinch to zoom / pan</li>
               <li><b>Space</b> / middle-drag — pan</li>
@@ -115,7 +130,8 @@
           </select>
         </div>
         <p class="dialog-hint">
-          Distance in the real world, not the size on screen. If the bar runs 0 to 1 m, type 1.
+          Real-world distance, not the size on screen. Works for the graphic bar or any length
+          you know (e.g. a wall measured on site).
         </p>
         <div class="dialog-actions">
           <button id="calibCancel" class="ghost">Cancel</button>

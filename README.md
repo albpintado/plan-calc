@@ -30,9 +30,11 @@ npm test
 ## Workflow
 
 1. **Open plan** — an image (PNG/JPG/WebP) or a PDF (multi-page supported).
-2. **Calibrate** (key `2`) — drag across the graphic scale bar, then type its real
-   length and unit. This stores `px / m`; everything internally is pixel distance,
-   converted to millimetres for display.
+2. **Calibrate** (key `2`) — drag across the graphic scale bar (or any length you know)
+   and type its real value and unit. This stores `px / m`; everything internally is pixel
+   distance, converted to millimetres for display. You can also calibrate from a **known
+   dimension**: select a dimension, type its real length in the Scale panel and press
+   **Set** — every measurement rescales.
 3. **Dimension** (key `3`) — drag from point to point. Each dimension is labelled in
    mm. `Shift` locks the angle to 45° steps; endpoints snap to existing points. The
    **Snap** toggle (`S`) also snaps the angle to horizontal, vertical or any existing
@@ -40,9 +42,10 @@ npm test
 4. **Area** (key `4`) — tap points to build a polygon and tap the first point (or press
    `Enter`) to close it. The area is shown in m² (or cm² for small ones). Dragging pans,
    and a second finger zooms, so it works one-handed on mobile.
-5. **Select / delete** — with the Pan tool, click a dimension, an area or the
-   calibration line to highlight it; a red `×` appears. Clicking it (or `Delete`) opens
-   a small confirmation before removing the line. Changes are undoable with `Ctrl+Z`.
+5. **Select / edit / delete** — with the Pan tool, click a dimension, an area or the
+   calibration line to highlight it. A selected dimension shows **handles on its ends**
+   (drag one to move it) and on its body (drag to move the whole dimension); a red `×`
+   deletes the line after a small confirmation. Changes are undoable with `Ctrl+Z`.
 6. **Export PNG** — writes the annotated plan to a file. Projects (raster, calibration,
    dimensions and areas per page) are auto-saved in IndexedDB and restored on reload.
 

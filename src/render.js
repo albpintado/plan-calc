@@ -201,6 +201,31 @@ function drawAreaDraft(ctx, transform, draft, cursor, calibration) {
   }
 }
 
+function drawEditHandles(ctx, transform, measurement) {
+  const a = transform.toScreen(measurement.a);
+  const b = transform.toScreen(measurement.b);
+  ctx.save();
+  for (const point of [a, b]) {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.measureActive;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+  }
+  const midX = (a.x + b.x) / 2;
+  const midY = (a.y + b.y) / 2;
+  ctx.beginPath();
+  ctx.arc(midX, midY, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.strokeStyle = COLORS.measureActive;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawScaleBar(ctx, state, canvasHeight) {
   if (!state.calibration) return;
   const bar = niceScaleBar(state.calibration.pxPerMeter * state.view.scale, 140);
@@ -314,6 +339,11 @@ export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
   }
 
   drawAreaDraft(ctx, transform, state.areaDraft || [], state.areaCursor, state.calibration);
+
+  if (typeof state.selectedId === 'number') {
+    const selectedMeasurement = state.measurements.find((m) => m.id === state.selectedId);
+    if (selectedMeasurement) drawEditHandles(ctx, transform, selectedMeasurement);
+  }
 
   if (state.snap) {
     const p = transform.toScreen(state.snap);
