@@ -38,7 +38,9 @@ npm test
 
 Everything is saved automatically in **IndexedDB** (base `plan-calc`): the uploaded
 file, the view, and, per page, the calibration, dimensions and areas. Nothing is
-uploaded.
+uploaded. Every change is written immediately, and any pending write is flushed when
+the tab is hidden or closed, so a reload brings the project back. A brief loading
+overlay appears while a project is restored or imported.
 
 IndexedDB is tied to the exact **origin** (`scheme://host:port`) and to the browser
 profile, so the same project is only visible from the same URL and the same device.

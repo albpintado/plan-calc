@@ -13,8 +13,18 @@ function openDb() {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onclose = () => {
+        dbPromise = null;
+      };
+      resolve(db);
+    };
+    request.onerror = () => reject(request.error || new Error('Could not open the database'));
+    request.onblocked = () => reject(new Error('The database is blocked by another tab'));
+  });
+  dbPromise.catch(() => {
+    dbPromise = null;
   });
   return dbPromise;
 }
@@ -22,12 +32,20 @@ function openDb() {
 async function withStore(mode, run) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, mode);
-    const store = tx.objectStore(STORE);
-    const result = run(store);
-    tx.oncomplete = () => resolve(result && 'result' in result ? result.result : result);
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
+    let transaction;
+    try {
+      transaction = db.transaction(STORE, mode);
+    } catch (error) {
+      dbPromise = null;
+      reject(error);
+      return;
+    }
+    const request = run(transaction.objectStore(STORE));
+    transaction.oncomplete = () => {
+      resolve(request && 'result' in request ? request.result : undefined);
+    };
+    transaction.onerror = () => reject(transaction.error || new Error('Transaction failed'));
+    transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
   });
 }
 
@@ -36,14 +54,8 @@ export async function saveState(state) {
 }
 
 export async function loadState() {
-  return new Promise((resolve, reject) => {
-    openDb().then((db) => {
-      const tx = db.transaction(STORE, 'readonly');
-      const request = tx.objectStore(STORE).get(KEY);
-      request.onsuccess = () => resolve(request.result ?? null);
-      request.onerror = () => reject(request.error);
-    }, reject);
-  });
+  const value = await withStore('readonly', (store) => store.get(KEY));
+  return value ?? null;
 }
 
 export async function clearState() {

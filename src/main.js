@@ -36,6 +36,8 @@ const els = {
   confirmText: document.getElementById('confirmText'),
   confirmOk: document.getElementById('confirmOk'),
   confirmCancel: document.getElementById('confirmCancel'),
+  loading: document.getElementById('loading'),
+  loadingText: document.getElementById('loadingText'),
   toolButtons: [...document.querySelectorAll('button.tool')],
   pagePrev: document.getElementById('pagePrev'),
   pageNext: document.getElementById('pageNext'),
@@ -265,12 +267,23 @@ function requestRender() {
 function afterChange() {
   requestRender();
   syncUI();
-  scheduleSave();
+  persist();
 }
 
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(persist, 350);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    persist();
+  }, 350);
+}
+
+function flushSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    persist();
+  }
 }
 
 async function persist() {
@@ -1173,6 +1186,15 @@ function syncUI() {
   els.exportBtn.disabled = !state.source;
 }
 
+function showLoading(text) {
+  els.loadingText.textContent = text;
+  els.loading.hidden = false;
+}
+
+function hideLoading() {
+  els.loading.hidden = true;
+}
+
 async function applySavedState(saved) {
   const file = new File([saved.sourceBlob], saved.name || 'plan', {
     type: saved.sourceBlob.type || '',
@@ -1191,6 +1213,7 @@ async function applySavedState(saved) {
 }
 
 async function restore() {
+  showLoading('Loading project…');
   try {
     const saved = await loadState();
     if (!saved || !saved.sourceBlob) return;
@@ -1198,6 +1221,9 @@ async function restore() {
     toast('Restored last session');
   } catch (error) {
     console.warn('restore failed', error);
+    toast('Could not restore the last session', true);
+  } finally {
+    hideLoading();
   }
 }
 
@@ -1255,8 +1281,8 @@ async function exportProject() {
 }
 
 async function importProject(file) {
+  showLoading('Importing project…');
   try {
-    toast('Importing…');
     const payload = JSON.parse(await file.text());
     if (!payload || payload.format !== 'plan-calc-project' || !payload.source?.data) {
       throw new Error('Not a plan-calc project file');
@@ -1274,6 +1300,8 @@ async function importProject(file) {
   } catch (error) {
     console.error(error);
     toast('Could not import that file', true);
+  } finally {
+    hideLoading();
   }
 }
 
@@ -1424,6 +1452,11 @@ function bindEvents() {
       spaceDown = false;
       els.canvas.style.cursor = state.tool === 'select' ? 'grab' : 'crosshair';
     }
+  });
+
+  window.addEventListener('pagehide', flushSave);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSave();
   });
 
   new ResizeObserver(resize).observe(workspace);
