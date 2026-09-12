@@ -25,6 +25,8 @@ const els = {
   panelCount: document.getElementById('panelCount'),
   snapToggle: document.getElementById('snapToggle'),
   deleteHandle: document.getElementById('deleteHandle'),
+  loupe: document.getElementById('loupe'),
+  loupeCanvas: document.getElementById('loupeCanvas'),
   confirmBackdrop: document.getElementById('confirmBackdrop'),
   confirmText: document.getElementById('confirmText'),
   confirmOk: document.getElementById('confirmOk'),
@@ -148,6 +150,66 @@ function paint() {
   render(ctx, state, cssWidth, cssHeight);
   syncZoom();
   positionDeleteHandle();
+}
+
+function hideLoupe() {
+  els.loupe.hidden = true;
+}
+
+function updateLoupe(screen, imagePoint) {
+  if (!state.source) return hideLoupe();
+  const dpr = window.devicePixelRatio || 1;
+  const canvas = els.loupeCanvas;
+  const pixelSize = Math.round(LOUPE_SIZE * dpr);
+  if (canvas.width !== pixelSize) {
+    canvas.width = pixelSize;
+    canvas.height = pixelSize;
+  }
+  const lctx = canvas.getContext('2d');
+  lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const scale = Math.min(MAX_ZOOM, state.view.scale * LOUPE_ZOOM);
+  const view = {
+    scale,
+    tx: LOUPE_SIZE / 2 - imagePoint.x * scale,
+    ty: LOUPE_SIZE / 2 - imagePoint.y * scale,
+  };
+  const halfSpan = LOUPE_SIZE / (2 * scale) + 16;
+  const sx = Math.max(0, imagePoint.x - halfSpan);
+  const sy = Math.max(0, imagePoint.y - halfSpan);
+  const sourceRect = {
+    x: sx,
+    y: sy,
+    w: Math.max(1, Math.min(state.source.width - sx, halfSpan * 2)),
+    h: Math.max(1, Math.min(state.source.height - sy, halfSpan * 2)),
+  };
+  render(lctx, { ...state, view, selectedId: null }, LOUPE_SIZE, LOUPE_SIZE, {
+    showScaleBar: false,
+    sourceRect,
+  });
+
+  const center = LOUPE_SIZE / 2;
+  lctx.strokeStyle = 'rgba(255, 45, 149, 0.9)';
+  lctx.lineWidth = 1.5;
+  lctx.beginPath();
+  lctx.moveTo(center - 8, center);
+  lctx.lineTo(center + 8, center);
+  lctx.moveTo(center, center - 8);
+  lctx.lineTo(center, center + 8);
+  lctx.stroke();
+  lctx.strokeStyle = 'rgba(255, 45, 149, 0.35)';
+  lctx.beginPath();
+  lctx.arc(center, center, 5, 0, Math.PI * 2);
+  lctx.stroke();
+
+  const half = LOUPE_SIZE / 2;
+  let left = screen.x - half;
+  let top = screen.y - LOUPE_SIZE - LOUPE_GAP;
+  if (top < 8) top = screen.y + LOUPE_GAP;
+  left = Math.max(8, Math.min(left, cssWidth - LOUPE_SIZE - 8));
+  top = Math.max(8, Math.min(top, cssHeight - LOUPE_SIZE - 8));
+  els.loupe.style.left = `${left}px`;
+  els.loupe.style.top = `${top}px`;
+  els.loupe.hidden = false;
 }
 
 function requestRender() {
@@ -444,6 +506,7 @@ function pointerPair() {
 }
 
 function beginGesture([p1, p2]) {
+  hideLoupe();
   gesture = {
     startDistance: Math.max(1, distance(p1, p2)),
     startMid: { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 },
@@ -494,10 +557,12 @@ function onPointerDown(event) {
     startImage: start.point,
     startScreen: screen,
     moved: false,
+    touch: event.pointerType !== 'mouse',
   };
   state.preview = { a: start.point, b: start.point };
   state.snap = start.snapped ? start.point : null;
   requestRender();
+  if (drag.touch) updateLoupe(screen, start.point);
 }
 
 function onPointerMove(event) {
@@ -548,10 +613,12 @@ function onPointerMove(event) {
   state.preview = { a: drag.startImage, b: result.point };
   state.snap = result.snapped ? result.point : null;
   requestRender();
+  if (drag.touch) updateLoupe(screen, result.point);
 }
 
 function onPointerUp(event) {
   activePointers.delete(event.pointerId);
+  hideLoupe();
 
   if (gesture) {
     if (activePointers.size < 2) {
@@ -605,6 +672,9 @@ function onPointerUp(event) {
 
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 80;
+const LOUPE_SIZE = 148;
+const LOUPE_ZOOM = 2.5;
+const LOUPE_GAP = 20;
 
 function clampZoom(scale) {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, scale));
@@ -667,6 +737,7 @@ function setTool(tool) {
   state.tool = tool;
   state.preview = null;
   state.snap = null;
+  hideLoupe();
   els.canvas.style.cursor = tool === 'select' ? 'grab' : 'crosshair';
   syncUI();
 }
@@ -881,6 +952,7 @@ function bindEvents() {
         drag = null;
         state.preview = null;
         state.snap = null;
+        hideLoupe();
         requestRender();
       }
     }

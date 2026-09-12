@@ -149,13 +149,28 @@ export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
   const transform = makeTransform(state.view);
   const origin = transform.toScreen({ x: 0, y: 0 });
   ctx.imageSmoothingEnabled = state.view.scale < 1;
-  ctx.drawImage(
-    state.source.bitmap,
-    origin.x,
-    origin.y,
-    state.source.width * state.view.scale,
-    state.source.height * state.view.scale,
-  );
+  if (options.sourceRect) {
+    const rect = options.sourceRect;
+    ctx.drawImage(
+      state.source.bitmap,
+      rect.x,
+      rect.y,
+      rect.w,
+      rect.h,
+      origin.x + rect.x * state.view.scale,
+      origin.y + rect.y * state.view.scale,
+      rect.w * state.view.scale,
+      rect.h * state.view.scale,
+    );
+  } else {
+    ctx.drawImage(
+      state.source.bitmap,
+      origin.x,
+      origin.y,
+      state.source.width * state.view.scale,
+      state.source.height * state.view.scale,
+    );
+  }
 
   for (const measurement of state.measurements) {
     const selected = measurement.id === state.selectedId;

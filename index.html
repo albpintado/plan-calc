@@ -44,6 +44,9 @@
       <main class="workspace">
         <canvas id="canvas"></canvas>
         <button id="deleteHandle" class="delete-handle" hidden title="Delete">×</button>
+        <div id="loupe" class="loupe" hidden>
+          <canvas id="loupeCanvas"></canvas>
+        </div>
 
         <aside class="panel">
           <div class="panel-header">
@@ -78,6 +81,7 @@
               <li><b>Shift</b> — lock to 45° steps</li>
               <li><b>Snap</b> (S) — align to grid and existing lines</li>
               <li><b>Click</b> a line — shows × to delete</li>
+              <li><b>Touch</b> — a magnifier follows your finger while drawing</li>
               <li><b>Two-finger drag</b> — pinch to zoom / pan</li>
               <li><b>Space</b> / middle-drag — pan</li>
               <li><b>Wheel</b> — zoom at cursor</li>

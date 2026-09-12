@@ -50,6 +50,7 @@ npm test
 | `Shift` (while drawing) | Lock angle to 45° |
 | `S` | Toggle angle snap (grid + existing lines) |
 | Click a line | Select it (shows `×` to delete) |
+| Draw with touch | A magnifier above your finger shows the exact end point |
 | Two-finger drag | Pinch to zoom and pan (touch) |
 | `Space` or middle-drag | Pan |
 | Wheel | Zoom at cursor |
