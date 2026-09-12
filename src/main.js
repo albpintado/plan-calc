@@ -1249,9 +1249,8 @@ async function restore() {
     if (lastError) throw lastError;
     toast('Restored last session');
   } catch (error) {
-    const detail = error && error.message;
-    console.warn('restore failed', detail, error);
-    toast(detail ? `Could not restore: ${detail}` : 'Could not restore the last session', true);
+    console.warn('restore failed', error && error.message, error);
+    toast('Could not restore the last session', true);
   } finally {
     hideLoading();
   }
