@@ -3,186 +3,245 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>plan-calc — local plan measurement</title>
+    <title>plan-calc — local plan tools</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
     <div id="app">
-      <header class="toolbar">
-        <div class="brand">plan-calc</div>
-        <button id="openBtn" class="primary" title="Open a plan image or PDF">Open</button>
-        <input id="fileInput" type="file" accept="image/*,application/pdf" hidden />
-        <button id="panelToggle" class="ghost" aria-pressed="false" title="Show or hide the info panel">
-          Info<span id="panelCount" class="count-badge" hidden>0</span>
-        </button>
+      <section id="dashboard" class="dashboard">
+        <header class="dashboard-header">
+          <div class="brand">plan-calc</div>
+          <div class="dashboard-actions">
+            <button id="newBlankBtn" class="ghost">New model</button>
+            <button id="newFromPlanBtn" class="primary">New from plan</button>
+            <input id="newFileInput" type="file" accept="image/*,application/pdf" hidden />
+          </div>
+        </header>
+        <p class="dashboard-hint">
+          Build simple 2D floor plans: measure a plan, or model walls, rooms and openings over it.
+        </p>
+        <div id="projectGrid" class="project-grid"></div>
+        <p id="emptyProjects" class="empty-projects" hidden>
+          No projects yet. Start from a plan or create an empty model.
+        </p>
+      </section>
 
-        <span class="divider"></span>
-        <div class="tools" role="group" aria-label="Tools">
-          <button id="toolSelect" data-tool="select" class="tool active" title="Pan and select (1)">Pan <kbd>1</kbd></button>
-          <button id="toolCalibrate" data-tool="calibrate" class="tool" title="Calibrate scale (2)">Calibrate <kbd>2</kbd></button>
-          <button id="toolMeasure" data-tool="measure" class="tool" title="Draw dimension (3)">Dimension <kbd>3</kbd></button>
-          <button id="toolArea" data-tool="area" class="tool" title="Draw a space / area (4)">Space <kbd>4</kbd></button>
-          <button id="toolWall" data-tool="wall" class="tool" title="Draw a wall with thickness (5)">Wall <kbd>5</kbd></button>
-          <button id="toolOpening" data-tool="opening" class="tool" title="Draw a door or window (6)">Opening <kbd>6</kbd></button>
-        </div>
+      <section id="workspace" class="workspace-shell" hidden>
+        <header class="appbar">
+          <button id="backBtn" class="ghost">‹ Projects</button>
+          <span id="projectTitle" class="project-title">–</span>
+          <div class="tool-switch" role="group" aria-label="Tool">
+            <button data-toolview="measure" class="tool-switch-btn active">Measure</button>
+            <button data-toolview="build" class="tool-switch-btn">Build</button>
+          </div>
+          <div id="measureToolbar" class="tools">
+            <button id="toolSelect" data-tool="select" class="tool active" title="Pan and select (1)">Pan <kbd>1</kbd></button>
+            <button id="toolCalibrate" data-tool="calibrate" class="tool" title="Calibrate scale (2)">Calibrate <kbd>2</kbd></button>
+            <button id="toolMeasure" data-tool="measure" class="tool" title="Draw dimension (3)">Dimension <kbd>3</kbd></button>
+            <button id="toolArea" data-tool="area" class="tool" title="Draw a space / area (4)">Space <kbd>4</kbd></button>
+            <span class="divider"></span>
+            <button id="snapToggle" class="ghost" aria-pressed="false" title="Snap to points and existing lines (S)">Snap</button>
+            <div class="pages">
+              <button id="pagePrev" title="Previous page">‹</button>
+              <span id="pageInfo">–</span>
+              <button id="pageNext" title="Next page">›</button>
+            </div>
+            <button id="panelToggle" class="ghost" aria-pressed="false" title="Show or hide the info panel">Info<span id="panelCount" class="count-badge" hidden>0</span></button>
+          </div>
+          <div id="buildToolbar" class="tools" hidden>
+            <button id="toolSelectB" data-tool="select" class="tool active" title="Pan and select (1)">Pan <kbd>1</kbd></button>
+            <button id="toolCalibrateB" data-tool="calibrate" class="tool" title="Calibrate scale (2)">Calibrate <kbd>2</kbd></button>
+            <button id="toolWall" data-tool="wall" class="tool" title="Draw a wall (3)">Wall <kbd>3</kbd></button>
+            <button id="toolOpening" data-tool="opening" class="tool" title="Draw a door or window (4)">Opening <kbd>4</kbd></button>
+            <button id="toolRoom" data-tool="room" class="tool" title="Draw a room (5)">Room <kbd>5</kbd></button>
+            <span class="divider"></span>
+            <button id="snapToggleB" class="ghost" aria-pressed="false" title="Snap to points and existing lines (S)">Snap</button>
+            <button id="panelToggleB" class="ghost" aria-pressed="false" title="Show or hide the info panel">Info<span id="panelCountB" class="count-badge" hidden>0</span></button>
+          </div>
+          <div class="spacer"></div>
+          <span id="zoomInfo" class="zoom">100%</span>
+          <button id="fitBtn" class="ghost" title="Fit to screen (F)">Fit</button>
+          <button id="undoBtn" class="ghost" title="Undo (Ctrl+Z)">Undo</button>
+          <button id="redoBtn" class="ghost" title="Redo (Ctrl+Shift+Z)">Redo</button>
+        </header>
 
-        <span class="divider"></span>
-        <button id="snapToggle" class="ghost" aria-pressed="false" title="Snap dimensions to horizontal, vertical and existing lines (S)">Snap</button>
-
-        <span class="divider"></span>
-        <div class="pages">
-          <button id="pagePrev" title="Previous page">‹</button>
-          <span id="pageInfo">–</span>
-          <button id="pageNext" title="Next page">›</button>
-        </div>
-
-        <div class="spacer"></div>
-
-        <span id="zoomInfo" class="zoom">100%</span>
-        <button id="fitBtn" title="Fit to screen (F)">Fit</button>
-        <button id="undoBtn" title="Undo (Ctrl+Z)">Undo</button>
-        <button id="exportBtn" title="Export annotated PNG">Export</button>
-      </header>
-
-      <main class="workspace">
-        <canvas id="canvas"></canvas>
-        <button id="deleteHandle" class="delete-handle" hidden title="Delete">×</button>
-        <div id="loupe" class="loupe" hidden>
-          <canvas id="loupeCanvas"></canvas>
-        </div>
-
-        <aside class="panel">
-          <div class="panel-header">
-            <span class="panel-title">Info</span>
-            <button id="panelClose" class="icon-btn" title="Close panel">×</button>
+        <main class="workspace">
+          <canvas id="canvas"></canvas>
+          <button id="deleteHandle" class="delete-handle" hidden title="Delete">×</button>
+          <div id="loupe" class="loupe" hidden>
+            <canvas id="loupeCanvas"></canvas>
           </div>
 
-          <section>
-            <h2>Scale</h2>
-            <div id="calibrateStatus" class="badge warn">Not calibrated</div>
-            <p class="hint">
-              <b>Graphic scale:</b> pick <b>Calibrate</b> (2), drag across the scale bar (or any
-              length you know) and type its real value.
-            </p>
-            <p class="hint">
-              <b>Known dimension:</b> select a dimension, enter its real length and press Set.
-            </p>
-            <div class="dialog-row">
-              <input id="knownValue" type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 4" />
-              <select id="knownUnit">
-                <option value="m">m</option>
-                <option value="cm">cm</option>
-                <option value="mm">mm</option>
-                <option value="ft">ft</option>
-                <option value="in">in</option>
-              </select>
-              <button id="knownSet" class="primary small" disabled>Set</button>
+          <aside id="measurePanel" class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Measure</span>
+              <button id="panelClose" class="icon-btn" title="Close panel">×</button>
             </div>
-            <button id="resetCalibration" class="ghost small" hidden>Reset calibration</button>
-          </section>
 
-          <section id="measureSection">
-            <h2>
-              <span>Dimensions <span id="measureCount" class="count">0</span></span>
-              <button id="layerMeasureToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
-            </h2>
-            <div class="panel-actions">
-              <button id="deleteBtn" class="ghost small" disabled>Delete selected</button>
-              <button id="clearMeasureBtn" class="ghost small" disabled>Clear dimensions</button>
-            </div>
-            <ul id="measurementList" class="list"></ul>
-            <div id="totalRow" class="total" hidden><span>Total</span><b id="totalValue">0 mm</b></div>
-          </section>
+            <section>
+              <h2>Scale</h2>
+              <div id="calibrateStatus" class="badge warn">Not calibrated</div>
+              <p class="hint">
+                Pick <b>Calibrate</b> (2), drag across a known length and type its real value.
+              </p>
+              <div class="dialog-row">
+                <input id="knownValue" type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 4" />
+                <select id="knownUnit">
+                  <option value="m">m</option>
+                  <option value="cm">cm</option>
+                  <option value="mm">mm</option>
+                  <option value="ft">ft</option>
+                  <option value="in">in</option>
+                </select>
+                <button id="knownSet" class="primary small" disabled>Set</button>
+              </div>
+              <button id="resetCalibration" class="ghost small" hidden>Reset calibration</button>
+            </section>
 
-          <section id="areaSection">
-            <h2>
-              <span>Spaces <span id="areaCount" class="count">0</span></span>
-              <button id="layerAreaToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
-            </h2>
-            <div class="dialog-row">
-              <select id="spaceType" title="Type for the next space you draw"></select>
-            </div>
-            <div class="panel-actions">
-              <button id="clearAreaBtn" class="ghost small" disabled>Clear spaces</button>
-            </div>
-            <ul id="areaList" class="list"></ul>
-            <div id="areaTotalRow" class="total" hidden><span>Total</span><b id="areaTotal">0 m²</b></div>
-          </section>
+            <section id="measureSection">
+              <h2>
+                <span>Dimensions <span id="measureCount" class="count">0</span></span>
+                <button id="layerMeasureToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
+              </h2>
+              <div class="panel-actions">
+                <button id="deleteBtn" class="ghost small" disabled>Delete selected</button>
+                <button id="clearMeasureBtn" class="ghost small" disabled>Clear</button>
+              </div>
+              <ul id="measurementList" class="list"></ul>
+              <div id="totalRow" class="total" hidden><span>Total</span><b id="totalValue">0 mm</b></div>
+            </section>
 
-          <section id="wallSection">
-            <h2>
-              <span>Walls <span id="wallCount" class="count">0</span></span>
-              <button id="layerWallToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
-            </h2>
-            <div class="dialog-row">
-              <select id="wallType" title="Type for the next wall you draw"></select>
-              <input id="wallThickness" type="number" min="0" step="1" inputmode="numeric" value="90" title="Wall thickness in millimetres" />
-              <span class="field-unit">mm</span>
-            </div>
-            <div class="panel-actions">
-              <button id="clearWallBtn" class="ghost small" disabled>Clear walls</button>
-            </div>
-            <ul id="wallList" class="list"></ul>
-            <div id="wallTotalRow" class="total" hidden><span>Total length</span><b id="wallTotal">0 m</b></div>
-          </section>
+            <section id="areaSection">
+              <h2>
+                <span>Spaces <span id="areaCount" class="count">0</span></span>
+                <button id="layerAreaToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
+              </h2>
+              <div class="dialog-row">
+                <select id="spaceType" title="Type for the next space"></select>
+              </div>
+              <div class="panel-actions">
+                <button id="clearAreaBtn" class="ghost small" disabled>Clear</button>
+              </div>
+              <ul id="areaList" class="list"></ul>
+              <div id="areaTotalRow" class="total" hidden><span>Total</span><b id="areaTotal">0 m²</b></div>
+            </section>
 
-          <section id="openingSection">
-            <h2>
-              <span>Openings <span id="openingCount" class="count">0</span></span>
-              <button id="layerOpeningToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
-            </h2>
-            <div class="dialog-row">
-              <select id="openingType" title="Type for the next opening you draw"></select>
-            </div>
-            <div class="panel-actions">
-              <button id="clearOpeningBtn" class="ghost small" disabled>Clear openings</button>
-            </div>
-            <ul id="openingList" class="list"></ul>
-          </section>
+            <section>
+              <h2>Summary</h2>
+              <div id="measureSummary" class="quantities"></div>
+              <div class="panel-actions">
+                <button id="exportCsv" class="ghost small">Export CSV</button>
+                <button id="exportPng" class="ghost small">Export PNG</button>
+              </div>
+            </section>
 
-          <section id="quantitiesSection">
-            <h2>Quantities</h2>
-            <div id="quantities" class="quantities"></div>
-            <button id="exportCsv" class="ghost small">Export CSV</button>
-          </section>
+            <section>
+              <h2>Project</h2>
+              <div class="panel-actions">
+                <button id="exportProject" class="ghost small">Export file</button>
+                <button id="importProject" class="ghost small">Import file</button>
+              </div>
+              <input id="projectInput" type="file" accept="application/json,.json" hidden />
+              <p class="hint">A <b>.json</b> backup of this project (plan + annotations).</p>
+            </section>
 
-          <section>
-            <h2>Project</h2>
-            <div class="panel-actions">
-              <button id="exportProject" class="ghost small">Export file</button>
-              <button id="importProject" class="ghost small">Import file</button>
+            <section>
+              <h2>Help</h2>
+              <ul class="help">
+                <li><b>Drag</b> — draw a dimension</li>
+                <li><b>Space</b> (4) — tap points, tap the first to close</li>
+                <li><b>Shift</b> — lock to 45° steps</li>
+                <li><b>Snap</b> (S) — align to points and existing lines</li>
+                <li><b>Select</b> — click a line, drag its ends/body</li>
+                <li><b>Two-finger drag</b> — pinch to zoom / pan</li>
+                <li><b>Ctrl+Z</b> / <b>Ctrl+Shift+Z</b> — undo / redo</li>
+                <li><b>F</b> — fit to screen</li>
+                <li><b>H</b> — show / hide this panel</li>
+              </ul>
+            </section>
+          </aside>
+
+          <aside id="buildPanel" class="panel" hidden>
+            <div class="panel-header">
+              <span class="panel-title">Build</span>
+              <button id="panelCloseB" class="icon-btn" title="Close panel">×</button>
             </div>
-            <input id="projectInput" type="file" accept="application/json,.json" hidden />
-            <p class="hint">
-              A <b>.json</b> with the plan and all annotations, to back up or move to another
-              device or address.
-            </p>
-            <p class="hint">Saved for this address: <b id="originLabel">–</b></p>
-          </section>
 
-          <section>
-            <h2>Help</h2>
-            <ul class="help">
-              <li><b>Drag</b> — draw a dimension / wall / opening</li>
-              <li><b>Space</b> (4) — tap points, tap the first to close</li>
-              <li><b>Wall</b> (5) / <b>Opening</b> (6) — drag a segment</li>
-              <li><b>Shift</b> — lock to 45° steps</li>
-              <li><b>Snap</b> (S) — align to grid and existing lines</li>
-              <li><b>Click</b> a line — shows × to delete</li>
-              <li><b>Hide</b> — toggle a layer (dimensions/spaces/walls/openings)</li>
-              <li><b>Select</b> a line — drag its ends or body to edit</li>
-              <li><b>Touch</b> — a magnifier follows your finger while drawing</li>
-              <li><b>Two-finger drag</b> — pinch to zoom / pan</li>
-              <li><b>Space</b> / middle-drag — pan</li>
-              <li><b>Wheel</b> — zoom at cursor</li>
-              <li><b>Delete</b> — remove selected</li>
-              <li><b>Ctrl+Z</b> — undo</li>
-              <li><b>F</b> — fit to screen</li>
-              <li><b>H</b> — show / hide this panel</li>
-            </ul>
-          </section>
-        </aside>
-      </main>
+            <section>
+              <h2>Scale</h2>
+              <div id="calibrateStatusB" class="badge warn">Not calibrated</div>
+              <div class="panel-actions">
+                <button id="importUnderlay" class="ghost small">Import plan from Measure</button>
+              </div>
+              <p class="hint">Import reuses the plan and scale of this project's Measure tool.</p>
+            </section>
+
+            <section id="wallSection">
+              <h2>
+                <span>Walls <span id="wallCount" class="count">0</span></span>
+                <button id="layerWallToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
+              </h2>
+              <div class="dialog-row">
+                <select id="wallType" title="Type for the next wall"></select>
+                <input id="wallThickness" type="number" min="0" step="1" inputmode="numeric" value="90" title="Thickness (mm)" />
+                <span class="field-unit">mm</span>
+              </div>
+              <div class="panel-actions">
+                <button id="clearWallBtn" class="ghost small" disabled>Clear</button>
+              </div>
+              <ul id="wallList" class="list"></ul>
+              <div id="wallTotalRow" class="total" hidden><span>Total length</span><b id="wallTotal">0 m</b></div>
+            </section>
+
+            <section id="openingSection">
+              <h2>
+                <span>Openings <span id="openingCount" class="count">0</span></span>
+                <button id="layerOpeningToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
+              </h2>
+              <div class="dialog-row">
+                <select id="openingType" title="Type for the next opening"></select>
+              </div>
+              <div class="panel-actions">
+                <button id="clearOpeningBtn" class="ghost small" disabled>Clear</button>
+              </div>
+              <ul id="openingList" class="list"></ul>
+            </section>
+
+            <section id="roomSection">
+              <h2>
+                <span>Rooms <span id="roomCount" class="count">0</span></span>
+                <button id="layerRoomToggle" class="ghost layer-toggle" aria-pressed="true">Hide</button>
+              </h2>
+              <div class="dialog-row">
+                <select id="roomType" title="Type for the next room"></select>
+              </div>
+              <div class="panel-actions">
+                <button id="clearRoomBtn" class="ghost small" disabled>Clear</button>
+              </div>
+              <ul id="roomList" class="list"></ul>
+              <div id="roomTotalRow" class="total" hidden><span>Useful</span><b id="roomTotal">0 m²</b></div>
+            </section>
+
+            <section>
+              <h2>Quantities</h2>
+              <div id="buildQuantities" class="quantities"></div>
+              <button id="exportBuildCsv" class="ghost small">Export CSV</button>
+            </section>
+
+            <section>
+              <h2>Help</h2>
+              <ul class="help">
+                <li><b>Wall</b> (3) — drag; corners snap together</li>
+                <li><b>Opening</b> (4) — drag a door/window width</li>
+                <li><b>Room</b> (5) — tap points, tap the first to close</li>
+                <li><b>Pan</b> — drag a node or wall to edit</li>
+                <li><b>Snap</b> (S) — align to points, nodes and lines</li>
+                <li><b>Ctrl+Z</b> / <b>Ctrl+Shift+Z</b> — undo / redo</li>
+              </ul>
+            </section>
+          </aside>
+        </main>
+      </section>
 
       <div id="calibDialog" class="dialog" hidden>
         <label for="calibInput">Real length the calibration bar represents</label>
@@ -196,10 +255,6 @@
             <option value="in">in</option>
           </select>
         </div>
-        <p class="dialog-hint">
-          Real-world distance, not the size on screen. Works for the graphic bar or any length
-          you know (e.g. a wall measured on site).
-        </p>
         <div class="dialog-actions">
           <button id="calibCancel" class="ghost">Cancel</button>
           <button id="calibOk" class="primary">Set scale</button>
@@ -221,7 +276,7 @@
       <div id="loading" class="loading" hidden>
         <div class="loading-card">
           <span class="spinner" aria-hidden="true"></span>
-          <p id="loadingText">Loading project…</p>
+          <p id="loadingText">Loading…</p>
         </div>
       </div>
     </div>

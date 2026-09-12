@@ -1,186 +1,109 @@
 # plan-calc
 
-Local-first tool to measure a plan and paint **real dimensions (cotas) and areas** over
-it. Everything runs in your browser — no upload, no server, no network after install.
+A local-first web app for working with floor plans in the browser: **measure** an
+uploaded plan, or **build** a simple 2D model of it (walls, openings, rooms). No server,
+no account — everything lives in the browser's IndexedDB for the address you are on.
 
-Use it when a plan only carries a **graphic scale**: calibrate once against that
-scale bar, then draw dimensions and areas anywhere on the plan and read them in
-**millimetres** and **square metres**.
+## Platform
 
-## Run
+The app opens on a **dashboard** of **projects**. A project is a workspace that owns a
+plan (the *underlay*) and its annotations, and it can be opened with one of two tools:
 
-```bash
-npm install     # once
-npm run dev     # http://localhost:5173
-```
+| Tool | What it does |
+| --- | --- |
+| **Measure** | Calibrate the scale, draw **dimensions** (cotas) and **spaces** (named/typed areas), and read measurement totals. |
+| **Build** | Model the plan: **walls** (a node graph, so corners move together), **openings** (doors/windows) and **rooms**, with quantities. |
 
-Production build (still fully local):
+Both tools share the project's **underlay and calibration**, so you upload a plan once.
+Switch tools from the app bar; the dashboard lists every project with its name and
+last-edited time.
 
-```bash
-npm run build
-npm run preview   # http://localhost:4174
-```
+- **New from plan** → creates a project from an image/PDF and opens it in Measure.
+- **New model** → creates a blank project (no underlay) and opens it in Build.
+- In Build, **Import plan from Measure** re-applies the project's plan and scale.
 
-Ports are pinned with `strictPort`, so if the port is taken Vite fails loudly instead
-of silently moving to another one (a different port is a different storage origin).
-When served over the tailnet, a private/Tailscale IP is redirected to the canonical
-MagicDNS name so the storage origin stays stable; add `?nocanonical=1` to the URL to
-skip that redirect. On a public deployment (e.g. Vercel) the redirect is disabled and
-the canonical host is not even baked into the bundle.
+## Measure tool
 
-Tests for the measurement math:
+1. **Calibrate** (key `2`) — drag across the graphic scale bar (or any length you know)
+   and type its real value and unit. This stores `px / m`; everything is pixel distance
+   internally, converted to millimetres for display. You can also calibrate from a **known
+   dimension**: select a dimension, type its real length in the Scale panel and press
+   **Set**.
+2. **Dimension** (key `3`) — drag from point to point, labelled in mm. `Shift` locks the
+   angle to 45°; `Snap` (`S`) aligns to points and to horizontal/vertical/existing lines.
+3. **Space** (key `4`) — pick a type (Living room, Bedroom, Kitchen, …, or Measurement) and
+   tap points to build a polygon; tap the first point (or `Enter`) to close it. Typed rooms
+   add up to the **Useful area**; `Measurement` polygons are free areas. Each row can be
+   named and re-typed.
+4. **Summary** — measured/useful area by room type, **Export CSV** and **Export PNG**.
+5. **Project → Export/Import file** — a `.json` backup of the whole project.
 
-```bash
-npm test
-```
+## Build tool
 
-## Projects and persistence
+Draws over the plan (or a blank sheet) and keeps a small **model**:
 
-Everything is saved automatically in **IndexedDB** (base `plan-calc`): the uploaded
-file, the view, and, per page, the calibration, dimensions and areas. Nothing is
-uploaded. Every change is written immediately, and any pending write is flushed when
-the tab is hidden or closed, so a reload brings the project back. A brief loading
-overlay appears while a project is restored or imported.
+- **Wall** (key `3`) — drag; endpoints become shared **nodes**, so two walls that meet move
+  together. Type and thickness (mm) come from the Walls panel.
+- **Opening** (key `4`) — drag a door/window width.
+- **Room** (key `5`) — tap a polygon, name it and type it.
+- **Pan** (key `1`) — select; drag a node, a wall or an opening to edit it.
+- **Quantities** — useful area, wall footprint, built area (estimated = useful + wall
+  footprint), wall length and opening count, with **Export CSV**.
 
-IndexedDB is tied to the exact **origin** (`scheme://host:port`) and to the browser
-profile, so the same project is only visible from the same URL and the same device.
-To move it — or to keep a backup — use **Project → Export file** and **Import file**
-(a `.json` containing the plan and all annotations). The panel also shows the address
-the project is saved for.
+Walls and openings need a calibration to report real units; without it they are still
+drawn but quantities read as unavailable.
 
 ## Layers
 
-Annotations are grouped into four layers, toggled from the Info panel with **Hide** /
-**Show**:
+Every annotation group has a **Hide/Show** toggle in the panel: Dimensions, Spaces (in
+Measure), Walls, Openings, Rooms (in Build). A hidden layer is not drawn, cannot be
+selected and does not act as a snapping target. Each layer can be cleared on its own;
+clearing dimensions keeps the calibration.
 
-- **Dimensions** — the dimensions, the calibration line and the on-canvas scale bar.
-- **Spaces** — the named areas / rooms.
-- **Walls** — the wall segments.
-- **Openings** — the doors and windows.
+## Persistence
 
-A hidden layer is not drawn, cannot be selected and does not act as a snapping target;
-picking a tool whose layer is hidden makes it visible again. Visibility is saved with
-the project, so it survives a reload. Each layer can be emptied on its own with
-**Clear dimensions / spaces / walls / openings**; clearing the dimensions keeps the
-calibration (use **Reset calibration** for that). All are undoable.
+Projects are stored in **IndexedDB**, which is tied to the exact **origin**
+(`scheme://host:port`) and the browser profile — the same project is only visible from the
+same URL and the same device. The dashboard's **Export/Import file** moves a project
+between devices. Data saved by older versions (a single implicit project) is **migrated
+automatically** into a project named after the plan on first load.
 
-## Workflow
-
-1. **Open plan** — an image (PNG/JPG/WebP) or a PDF (multi-page supported).
-2. **Calibrate** (key `2`) — drag across the graphic scale bar (or any length you know)
-   and type its real value and unit. This stores `px / m`; everything internally is pixel
-   distance, converted to millimetres for display. You can also calibrate from a **known
-   dimension**: select a dimension, type its real length in the Scale panel and press
-   **Set** — every measurement rescales.
-3. **Dimension** (key `3`) — drag from point to point. Each dimension is labelled in
-   mm. `Shift` locks the angle to 45° steps; endpoints snap to existing points. The
-   **Snap** toggle (`S`) also snaps the angle to horizontal, vertical or any existing
-   dimension/calibration line, so a diagonal drag still comes out parallel.
-4. **Space / Area** (key `4`) — pick a **type** (Living room, Bedroom, Kitchen, Bathroom,
-   …, or Measurement) in the Spaces panel, then tap points to build a polygon and tap the
-   first point (or press `Enter`) to close it. The area is shown in m² (or cm² for small
-   ones). Typed spaces count towards the **useful area**; `Measurement` polygons are just
-   free areas. Each row can be **named** and its type changed. Dragging pans, and a second
-   finger zooms, so it works one-handed on mobile.
-5. **Wall** (key `5`) — drag along a wall. Its **type** and **thickness (mm)** come from
-   the Walls panel; walls add to the wall length and footprint.
-6. **Opening** (key `6`) — drag across a door or window; its type (Door/Window) is picked
-   in the Openings panel. Openings are counted and their widths totalled.
-7. **Quantities** — the panel shows useful area, wall footprint, built area (estimated =
-   useful + wall footprint), measured area, wall length and opening count. **Export CSV**
-   writes the breakdown (summary, spaces by name, rooms by type, walls and openings).
-8. **Select / edit / delete** — with the Pan tool, click a dimension, wall, opening, space
-   or the calibration line to highlight it. A selected segment shows **handles on its
-   ends** (drag one to move it) and on its body (drag to move it); a red `×` deletes it
-   after a small confirmation. Changes are undoable with `Ctrl+Z`.
-9. **Export PNG** — writes the annotated plan to a file. Projects (raster, calibration,
-   dimensions, spaces, walls and openings per page) are auto-saved in IndexedDB and
-   restored on reload.
-
-## Model and quantities
-
-Beyond annotating an image, the tool keeps a small **model of the home** so it can answer
-"how big are the spaces?":
-
-- **Spaces** are polygons with a **name** and a **type**; the types marked as rooms add up
-  to the **useful area**.
-- **Walls** are segments with a **type** and a **thickness** in millimetres; they
-  contribute their length and their footprint (length × thickness).
-- **Openings** are segments tagged as a door/window; they contribute a count and a total
-  width.
-- **Quantities** are derived from the model (see `src/model.js`, covered by
-  `test/model.test.js`) and exportable as **CSV** for a take-off.
-
-Walls and openings need a calibration to convert pixels to real units; without it they are
-still drawn but the quantities read as unavailable. Everything is additive: the original
-dimensions (cotas) and free areas keep working exactly as before, and all groups keep
-their own layer toggle.
-
-## Keys and touch
+## Keys
 
 | Input | Action |
 | --- | --- |
-| `1` / `2` / `3` / `4` / `5` / `6` | Pan-Select / Calibrate / Dimension / Space / Wall / Opening |
-| `Enter` (in Space) | Close the polygon |
+| `1` / `2` / `3` / `4` / `5` | Tool per the active toolbar (Pan / Calibrate / Dimension or Wall / Space or Opening / Room) |
+| `Enter` (polygon tools) | Close the polygon |
 | `Shift` (while drawing) | Lock angle to 45° |
-| `S` | Toggle angle snap (grid + existing lines) |
-| Click a line | Select it (shows `×` to delete) |
-| Draw with touch | A magnifier above your finger shows the exact end point |
-| Two-finger drag | Pinch to zoom and pan (touch) |
-| `Space` or middle-drag | Pan |
-| Wheel | Zoom at cursor |
+| `S` | Toggle snapping |
 | `F` | Fit to screen |
 | `H` | Show / hide the info panel |
-| `Delete` | Delete selected (asks to confirm) |
-| `Ctrl+Z` | Undo |
+| `Delete` | Delete the selected element |
+| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / redo |
 
-The **Info** button (or `H`) shows the side panel with the scale, the Spaces / Walls /
-Openings lists, the quantities and the delete/clear actions; it starts closed so the plan
-has the full area, and the button carries a badge with the number of annotations. The top
-bar stays on a single line and scrolls horizontally if the screen is too narrow.
-
-## How the math works
-
-- `computePxPerMeter(a, b, realMeters) = distance(a, b) / realMeters`
-- `mm = (px / pxPerMeter) * 1000`
-- Points are stored in **natural image pixels**, so zoom and pan never change a
-  measurement. Changing the calibration recomputes every label.
-
-Numbers are formatted with the **browser locale** on purpose, and the unit adapts to
-the size while keeping millimetre precision:
-
-| Value | Shown as |
-| --- | --- |
-| under 100 mm | `45 mm` |
-| 100–999 mm | `12,5 cm` (0,1 cm = 1 mm) |
-| 1000 mm and above | `3,9 m` (0,001 m = 1 mm) |
-
-In Spanish, `3,9 m` uses a decimal comma and 4-digit millimetres have no thousands
-separator, so a value can never be misread as `3,9 mm` the way an English
-`3,900 mm` can.
-
-The calibration value is the **real-world distance the bar represents**, not its
-size on screen or paper. A bar drawn "0 … 1" in metres is `1 m`; a bar "0 … 5 m" is
-`5 m`. If you measure the bar with a physical ruler you get the on-screen size, which
-is a different quantity and will produce wrong dimensions.
-
-All of this lives in `src/measure.js` and is covered by `test/measure.test.js`.
-
-## Structure
+## Project structure
 
 | Path | Responsibility |
 | --- | --- |
-| `src/measure.js` | Pure math: distance, calibration, mm conversion, snapping |
-| `src/viewport.js` | Image ↔ screen transforms, zoom, fit |
-| `src/render.js` | Canvas drawing of raster, calibration and dimensions |
-| `src/source.js` | Image / PDF loading and page rasterisation (pdf.js) |
-| `src/persistence.js` | IndexedDB autosave |
-| `src/layers.js` | Layer visibility defaults and resolution |
-| `src/model.js` | Space/wall/opening types and the quantities (take-off) |
-| `src/main.js` | State, tools, pointer/keyboard events, UI |
+| `src/main.js` | Shell: dashboard, project CRUD, tool switching |
+| `src/storage.js` | IndexedDB: projects, documents, legacy migration (WebKit-hardened retries) |
+| `src/project.js` | Project/document model and migration mapping |
+| `src/layers.js` | Layer visibility defaults |
+| `src/model.js` | Space/wall/opening types and quantity calculations (take-off) |
+| `src/measure.js` | Pure geometry, units and snapping math |
+| `src/render.js` | Canvas painting shared by both tools |
+| `src/source.js` | Underlay loading (image / PDF page) |
+| `src/core/canvas.js` | Pan/zoom/gesture/loupe controller shared by the tools |
+| `src/core/ui.js` | Toasts, dialogs, downloads |
+| `src/tools/measure.js` | The Measure tool |
+| `src/tools/build.js` | The Build tool |
 
-## Notes
+## Development
 
-- PDF pages are rasterised at up to 5× (capped at 3200 px wide) for precise clicks.
-- Dimensions are tracked per PDF page.
-- Not calibrated yet? You can still draw, but labels read `set scale first`.
+```sh
+npm install
+npm run dev      # dev server
+npm test         # node --test (pure logic + storage with fake-indexeddb)
+npm run build    # production build
+npm run preview  # preview the build
+```
