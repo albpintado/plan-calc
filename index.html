@@ -187,8 +187,15 @@
                 <span class="field-unit">mm</span>
               </div>
               <div class="panel-actions">
+                <button id="autoWallBtn" class="primary small">Auto-detect walls</button>
                 <button id="clearWallBtn" class="ghost small" disabled>Clear</button>
               </div>
+              <div id="autoWallReview" class="panel-actions" hidden>
+                <span id="autoWallInfo" class="hint"></span>
+                <button id="autoWallApply" class="primary small">Apply</button>
+                <button id="autoWallDiscard" class="ghost small">Discard</button>
+              </div>
+              <p class="hint">Auto-detect traces the wall centre-lines from the plan image; review the amber preview, then Apply.</p>
               <ul id="wallList" class="list"></ul>
               <div id="wallTotalRow" class="total" hidden><span>Total length</span><b id="wallTotal">0 m</b></div>
             </section>

@@ -47,6 +47,13 @@ Draws over the plan (or a blank sheet) and keeps a small **model**:
 
 - **Wall** (key `3`) — drag; endpoints become shared **nodes**, so two walls that meet move
   together. Type and thickness (mm) come from the Walls panel.
+- **Auto-detect walls** — traces wall centre-lines straight from the plan image and proposes
+  them as a dashed amber preview; review it, then **Apply** (one undo step) or **Discard**.
+  It is deterministic: the same image always yields the same walls. It targets **raster plans
+  that are already flat/rectified** (scans or straight exports) with walls drawn as **solid
+  dark strokes**, and it filters out text, furniture and logos by keeping the largest
+  connected ink structure and ignoring thin/short strokes. It is best-effort, not an oracle:
+  expect to fix corners or short walls by hand. Needs a plan with an image underlay.
 - **Opening** (key `4`) — drag a door/window width.
 - **Room** (key `5`) — tap a polygon, name it and type it.
 - **Pan** (key `1`) — select; drag an element to move it, or drag a node/wall/vertex/opening
@@ -95,6 +102,8 @@ automatically** into a project named after the plan on first load.
 | `src/project.js` | Project/document model and migration mapping |
 | `src/layers.js` | Layer visibility defaults |
 | `src/model.js` | Space/wall/opening types and quantity calculations (take-off) |
+| `src/autowall.js` | Deterministic wall extraction from a raster plan (binarize → thin → trace) |
+| `src/autowall.worker.js` | Web-worker wrapper so detection never blocks the UI |
 | `src/measure.js` | Pure geometry, units and snapping math |
 | `src/render.js` | Canvas painting shared by both tools |
 | `src/source.js` | Underlay loading (image / PDF page) |

@@ -28,6 +28,7 @@ import {
 } from '../model.js';
 import { DEFAULT_LAYER_VISIBILITY, isLayerVisible, resolveLayerVisibility } from '../layers.js';
 import { createCanvasController } from '../core/canvas.js';
+import WallWorker from '../autowall.worker.js?worker';
 import {
   confirmDialog,
   downloadBlob,
@@ -102,6 +103,11 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     wallList: el('wallList'),
     wallTotalRow: el('wallTotalRow'),
     wallTotal: el('wallTotal'),
+    autoWallBtn: el('autoWallBtn'),
+    autoWallReview: el('autoWallReview'),
+    autoWallInfo: el('autoWallInfo'),
+    autoWallApply: el('autoWallApply'),
+    autoWallDiscard: el('autoWallDiscard'),
     openingSection: el('openingSection'),
     openingCount: el('openingCount'),
     openingType: el('openingType'),
@@ -136,6 +142,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     tool: 'select',
     snapLines: false,
     layerVisibility: { ...DEFAULT_LAYER_VISIBILITY },
+    pendingWalls: null,
   };
 
   let sheet = getSheet(project, project.activePage);
@@ -400,6 +407,125 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
   function readNumber(input, fallback) {
     const value = Number.parseFloat((input.value || '').replace(',', '.'));
     return Number.isFinite(value) && value >= 0 ? value : fallback;
+  }
+
+  // ---- auto wall detection ----
+  const AUTO_MAX_DIM = 3000;
+  let wallWorker = null;
+
+  function getWallWorker() {
+    if (!wallWorker) wallWorker = new WallWorker();
+    return wallWorker;
+  }
+
+  function renderForDetection() {
+    const source = state.source;
+    if (!source || !source.bitmap) return null;
+    const factor = Math.min(1, AUTO_MAX_DIM / Math.max(source.width, source.height));
+    const width = Math.max(1, Math.round(source.width * factor));
+    const height = Math.max(1, Math.round(source.height * factor));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(source.bitmap, 0, 0, width, height);
+    return { imageData: ctx.getImageData(0, 0, width, height), scale: source.width / width };
+  }
+
+  function runExtraction(imageData) {
+    return new Promise((resolve, reject) => {
+      const worker = getWallWorker();
+      worker.onmessage = (event) => {
+        const data = event.data;
+        if (data && data.ok) resolve(data);
+        else reject(new Error((data && data.error) || 'Wall detection failed'));
+      };
+      worker.onerror = (event) => reject(new Error(event.message || 'Wall detection failed'));
+      worker.postMessage(
+        { width: imageData.width, height: imageData.height, data: imageData.data },
+        [imageData.data.buffer],
+      );
+    });
+  }
+
+  async function detectWalls() {
+    const prepared = renderForDetection();
+    if (!prepared) {
+      toast('Add a plan before detecting walls', true);
+      return;
+    }
+    showLoading('Detecting walls…');
+    try {
+      const result = await runExtraction(prepared.imageData);
+      if (!result.segments.length) {
+        toast('No walls detected — try a clearer, straight plan', true);
+        return;
+      }
+      const scale = prepared.scale;
+      state.pendingWalls = result.segments.map((segment) => ({
+        a: { x: segment.a.x * scale, y: segment.a.y * scale },
+        b: { x: segment.b.x * scale, y: segment.b.y * scale },
+        thickness: segment.thickness * scale,
+      }));
+      state.selected = null;
+      controller.requestRender();
+      syncUI();
+      toast(`${state.pendingWalls.length} walls detected — review and Apply`);
+    } catch (error) {
+      toast(error.message || 'Wall detection failed', true);
+    } finally {
+      hideLoading();
+    }
+  }
+
+  function wallTypeForThickness(mm) {
+    if (mm >= 280) return 'exterior';
+    if (mm >= 180) return 'carga';
+    return 'tabique';
+  }
+
+  function applyDetectedWalls() {
+    const pending = state.pendingWalls;
+    if (!pending || !pending.length) return;
+    const pxPerMeter = state.calibration?.pxPerMeter || 0;
+    pushHistory();
+    const cell = 4;
+    const nodeByKey = new Map();
+    const nodeFor = (point) => {
+      const key = `${Math.round(point.x / cell)}:${Math.round(point.y / cell)}`;
+      const existing = nodeByKey.get(key);
+      if (existing !== undefined) return existing;
+      const node = { id: nextId++, x: point.x, y: point.y };
+      state.nodes.push(node);
+      nodeByKey.set(key, node.id);
+      return node.id;
+    };
+    let added = 0;
+    for (const segment of pending) {
+      const n1 = nodeFor(segment.a);
+      const n2 = nodeFor(segment.b);
+      if (n1 === n2) continue;
+      const mm = pxPerMeter ? (segment.thickness / pxPerMeter) * 1000 : null;
+      state.walls.push({
+        id: nextId++,
+        n1,
+        n2,
+        type: mm ? wallTypeForThickness(mm) : 'tabique',
+        thickness: mm ? Math.max(10, Math.round(mm)) : 90,
+      });
+      added += 1;
+    }
+    state.pendingWalls = null;
+    state.selected = null;
+    afterChange();
+    toast(`Added ${added} walls`);
+  }
+
+  function discardDetectedWalls() {
+    if (!state.pendingWalls) return;
+    state.pendingWalls = null;
+    controller.requestRender();
+    syncUI();
   }
 
   // ---- selection ----
@@ -824,6 +950,32 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
   }
 
   function drawOverlay(ctx) {
+    if (state.pendingWalls && layerVisible('wall')) {
+      const transform = makeTransform(state.view);
+      ctx.save();
+      ctx.strokeStyle = '#ffb020';
+      ctx.fillStyle = '#ffb020';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      for (const segment of state.pendingWalls) {
+        const a = transform.toScreen(segment.a);
+        const b = transform.toScreen(segment.b);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      for (const segment of state.pendingWalls) {
+        for (const point of [segment.a, segment.b]) {
+          const p = transform.toScreen(point);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
     if (state.snap) {
       const transform = makeTransform(state.view);
       const p = transform.toScreen(state.snap);
@@ -1104,6 +1256,10 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     els.clearWallBtn.disabled = state.walls.length === 0;
     els.clearOpeningBtn.disabled = state.openings.length === 0;
     els.clearRoomBtn.disabled = state.rooms.length === 0;
+    const pendingCount = state.pendingWalls?.length || 0;
+    els.autoWallReview.hidden = pendingCount === 0;
+    if (pendingCount) els.autoWallInfo.textContent = `${pendingCount} walls proposed`;
+    els.autoWallBtn.disabled = !state.source || !state.source.bitmap;
   }
 
   function setTool(tool) {
@@ -1168,6 +1324,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
   }
 
   async function loadUnderlay() {
+    state.pendingWalls = null;
     if (!project.underlay) {
       if (state.source) releaseSource(state.source);
       state.source = blankSource();
@@ -1280,6 +1437,9 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
   els.panelClose.addEventListener('click', () => setPanelVisible(false));
   els.snapToggle.addEventListener('click', () => setSnapLines(!state.snapLines));
   els.importUnderlay.addEventListener('click', importUnderlay);
+  els.autoWallBtn.addEventListener('click', detectWalls);
+  els.autoWallApply.addEventListener('click', applyDetectedWalls);
+  els.autoWallDiscard.addEventListener('click', discardDetectedWalls);
   els.clearWallBtn.addEventListener('click', () => {
     if (!state.walls.length) return;
     pushHistory();
@@ -1331,6 +1491,10 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     requestDelete,
     destroy() {
       window.removeEventListener('keydown', onKeyDown);
+      if (wallWorker) {
+        wallWorker.terminate();
+        wallWorker = null;
+      }
       controller.destroy();
     },
   };
