@@ -49,13 +49,18 @@ Draws over the plan (or a blank sheet) and keeps a small **model**:
   together. Type and thickness (mm) come from the Walls panel.
 - **Auto-detect walls** — traces wall centre-lines straight from the plan image and proposes
   them as a dashed amber preview; review it, then **Apply** (one undo step) or **Discard**.
-  It is deterministic: the same image always yields the same walls. It targets **raster plans
-  that are already flat/rectified** (scans or straight exports) with walls drawn as **solid
-  dark strokes**, and it filters out text, furniture and logos by keeping the largest
-  connected ink structure and ignoring thin/short strokes. It is best-effort, not an oracle:
-  expect to fix corners or short walls by hand. Needs a plan with an image underlay.
+  It also detects **columns** (square pillars thicker than the wall) and returns them as
+  square **Columns** instead of drawing the diagonals a square's skeleton produces.
+  Collinear pieces separated by a small gap are merged into one wall, so a straight run reads
+  as a single wall between corners. It is deterministic: the same image always yields the
+  same walls and columns. It targets **raster plans that are already flat/rectified** (scans
+  or straight exports) with walls drawn as **solid dark strokes**, and filters out text,
+  furniture and logos by keeping the largest connected ink structure. It is best-effort, not
+  an oracle: expect to fix corners, short walls or a missed pillar by hand. Needs a plan with
+  an image underlay.
 - **Opening** (key `4`) — drag a door/window width.
 - **Room** (key `5`) — tap a polygon, name it and type it.
+- **Column** — a square pillar (from auto-detect); select it and drag to move it.
 - **Pan** (key `1`) — select; drag an element to move it, or drag a node/wall/vertex/opening
   handle to edit it. Walls share **nodes**, so dragging a corner moves every wall that meets
   there.
@@ -68,7 +73,7 @@ drawn but quantities read as unavailable.
 ## Layers
 
 Every annotation group has a **Hide/Show** toggle in the panel: Dimensions, Spaces (in
-Measure), Walls, Openings, Rooms (in Build). A hidden layer is not drawn, cannot be
+Measure), Walls, Openings, Columns, Rooms (in Build). A hidden layer is not drawn, cannot be
 selected and does not act as a snapping target. Each layer can be cleared on its own;
 clearing dimensions keeps the calibration.
 

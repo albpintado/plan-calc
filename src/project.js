@@ -7,7 +7,7 @@ export function emptyMeasureDoc() {
 }
 
 export function emptyBuildDoc() {
-  return { nextId: 1, nodes: [], walls: [], openings: [], rooms: [] };
+  return { nextId: 1, nodes: [], walls: [], openings: [], rooms: [], columns: [] };
 }
 
 export function emptySheet() {

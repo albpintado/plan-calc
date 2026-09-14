@@ -28,6 +28,7 @@ const baseState = {
   ],
   walls: [{ id: 3, type: 'tabique', thickness: 100, a: { x: 0, y: 0 }, b: { x: 100, y: 0 } }],
   openings: [{ id: 4, type: 'puerta', a: { x: 0, y: 0 }, b: { x: 80, y: 0 } }],
+  columns: [{ id: 5, x: 0, y: 0, w: 50, h: 30 }],
 };
 
 test('type helpers resolve and detect rooms', () => {
@@ -47,7 +48,9 @@ test('computes areas, walls and openings from calibrated pixels', () => {
   assert.equal(q.measuredArea, 2);
   assert.equal(q.wallLength, 1);
   assert.equal(q.wallArea, 0.1);
-  assert.equal(q.builtArea, 1.1);
+  assert.equal(q.columnCount, 1);
+  assert.equal(q.columnArea, 0.15);
+  assert.equal(q.builtArea, 1.25);
   assert.equal(q.openingCount, 1);
   assert.equal(q.openingWidth, 0.8);
   assert.equal(q.roomsByType.get('salon'), 1);

@@ -114,6 +114,11 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     clearOpeningBtn: el('clearOpeningBtn'),
     layerOpeningToggle: el('layerOpeningToggle'),
     openingList: el('openingList'),
+    columnSection: el('columnSection'),
+    columnCount: el('columnCount'),
+    clearColumnBtn: el('clearColumnBtn'),
+    layerColumnToggle: el('layerColumnToggle'),
+    columnList: el('columnList'),
     roomSection: el('roomSection'),
     roomCount: el('roomCount'),
     roomType: el('roomType'),
@@ -134,6 +139,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     walls: [],
     openings: [],
     rooms: [],
+    columns: [],
     selected: null,
     preview: null,
     snap: null,
@@ -143,6 +149,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     snapLines: false,
     layerVisibility: { ...DEFAULT_LAYER_VISIBILITY },
     pendingWalls: null,
+    pendingColumns: null,
   };
 
   let sheet = getSheet(project, project.activePage);
@@ -163,6 +170,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
       walls: state.walls.map((w) => ({ ...w })),
       openings: state.openings.map((o) => ({ ...o })),
       rooms: state.rooms.map((r) => ({ ...r, points: r.points.map((p) => ({ ...p })) })),
+      columns: state.columns.map((c) => ({ ...c })),
       nextId,
     };
   }
@@ -179,6 +187,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     state.walls = snap.walls;
     state.openings = snap.openings;
     state.rooms = snap.rooms;
+    state.columns = snap.columns || [];
     nextId = snap.nextId;
     state.selected = null;
   }
@@ -204,6 +213,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
       walls: state.walls,
       openings: state.openings,
       rooms: state.rooms,
+      columns: state.columns,
     };
     sheet.calibration = state.calibration;
   }
@@ -222,6 +232,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     state.walls = sheet.build.walls || [];
     state.openings = sheet.build.openings || [];
     state.rooms = sheet.build.rooms || [];
+    state.columns = sheet.build.columns || [];
     nextId = sheet.build.nextId || 1;
     state.selected = null;
     state.roomDraft = [];
@@ -246,6 +257,9 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
   function findRoom(id) {
     return state.rooms.find((r) => r.id === id) || null;
   }
+  function findColumn(id) {
+    return state.columns.find((c) => c.id === id) || null;
+  }
 
   function selectedElement() {
     const sel = state.selected;
@@ -254,6 +268,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     if (sel.kind === 'wall') return findWall(sel.id);
     if (sel.kind === 'opening') return findOpening(sel.id);
     if (sel.kind === 'room') return findRoom(sel.id);
+    if (sel.kind === 'column') return findColumn(sel.id);
     return null;
   }
 
@@ -457,7 +472,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     showLoading('Detecting walls…');
     try {
       const result = await runExtraction(prepared.imageData);
-      if (!result.segments.length) {
+      if (!result.segments.length && !result.columns.length) {
         toast('No walls detected — try a clearer, straight plan', true);
         return;
       }
@@ -467,10 +482,16 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
         b: { x: segment.b.x * scale, y: segment.b.y * scale },
         thickness: segment.thickness * scale,
       }));
+      state.pendingColumns = result.columns.map((column) => ({
+        x: column.x * scale,
+        y: column.y * scale,
+        w: column.w * scale,
+        h: column.h * scale,
+      }));
       state.selected = null;
       controller.requestRender();
       syncUI();
-      toast(`${state.pendingWalls.length} walls detected — review and Apply`);
+      toast(`${state.pendingWalls.length} walls, ${state.pendingColumns.length} columns detected`);
     } catch (error) {
       toast(error.message || 'Wall detection failed', true);
     } finally {
@@ -486,7 +507,8 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
 
   function applyDetectedWalls() {
     const pending = state.pendingWalls;
-    if (!pending || !pending.length) return;
+    const pendingColumns = state.pendingColumns;
+    if ((!pending || !pending.length) && (!pendingColumns || !pendingColumns.length)) return;
     const pxPerMeter = state.calibration?.pxPerMeter || 0;
     pushHistory();
     const cell = 4;
@@ -501,7 +523,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
       return node.id;
     };
     let added = 0;
-    for (const segment of pending) {
+    for (const segment of pending || []) {
       const n1 = nodeFor(segment.a);
       const n2 = nodeFor(segment.b);
       if (n1 === n2) continue;
@@ -515,15 +537,28 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
       });
       added += 1;
     }
+    let addedColumns = 0;
+    for (const column of pendingColumns || []) {
+      state.columns.push({
+        id: nextId++,
+        x: column.x,
+        y: column.y,
+        w: column.w,
+        h: column.h,
+      });
+      addedColumns += 1;
+    }
     state.pendingWalls = null;
+    state.pendingColumns = null;
     state.selected = null;
     afterChange();
-    toast(`Added ${added} walls`);
+    toast(`Added ${added} walls, ${addedColumns} columns`);
   }
 
   function discardDetectedWalls() {
-    if (!state.pendingWalls) return;
+    if (!state.pendingWalls && !state.pendingColumns) return;
     state.pendingWalls = null;
+    state.pendingColumns = null;
     controller.requestRender();
     syncUI();
   }
@@ -573,6 +608,16 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
         }
       }
     }
+    if (layerVisible('column')) {
+      for (const column of state.columns) {
+        const dx = Math.abs(imagePoint.x - column.x);
+        const dy = Math.abs(imagePoint.y - column.y);
+        if (dx <= column.w / 2 && dy <= column.h / 2) {
+          bestDistance = 0;
+          best = { kind: 'column', id: column.id };
+        }
+      }
+    }
     state.selected = best;
     controller.requestRender();
     syncUI();
@@ -593,6 +638,8 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
       state.openings = state.openings.filter((o) => o.id !== id);
     } else if (kind === 'room') {
       state.rooms = state.rooms.filter((r) => r.id !== id);
+    } else if (kind === 'column') {
+      state.columns = state.columns.filter((c) => c.id !== id);
     }
     state.selected = null;
     afterChange();
@@ -683,6 +730,25 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
               pointerId: event.pointerId,
               startImage: image,
               original: room.points.map((point) => ({ ...point })),
+              moved: false,
+              touch,
+            };
+            return;
+          }
+        }
+      }
+      if (selected?.kind === 'column' && !forcePan) {
+        const column = findColumn(selected.id);
+        if (column) {
+          const dx = Math.abs(image.x - column.x);
+          const dy = Math.abs(image.y - column.y);
+          if (dx <= column.w / 2 + 4 && dy <= column.h / 2 + 4) {
+            drag = {
+              mode: 'dragColumn',
+              id: column.id,
+              pointerId: event.pointerId,
+              startImage: image,
+              original: { x: column.x, y: column.y },
               moved: false,
               touch,
             };
@@ -785,6 +851,22 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
         element.a = { x: drag.original.a.x + dx, y: drag.original.a.y + dy };
         element.b = { x: drag.original.b.x + dx, y: drag.original.b.y + dy };
       }
+      controller.requestRender();
+      syncUI();
+      return;
+    }
+
+    if (drag.mode === 'dragColumn') {
+      const column = findColumn(drag.id);
+      if (!column) return;
+      const dx = image.x - drag.startImage.x;
+      const dy = image.y - drag.startImage.y;
+      if (!drag.moved) {
+        pushHistory();
+        drag.moved = true;
+      }
+      column.x = drag.original.x + dx;
+      column.y = drag.original.y + dy;
       controller.requestRender();
       syncUI();
       return;
@@ -976,6 +1058,22 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
       }
       ctx.restore();
     }
+    if (state.pendingColumns && layerVisible('column')) {
+      const transform = makeTransform(state.view);
+      ctx.save();
+      ctx.strokeStyle = '#ffb020';
+      ctx.fillStyle = 'rgba(255, 176, 32, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      for (const column of state.pendingColumns) {
+        const p = transform.toScreen(column);
+        const w = Math.max(4, column.w * state.view.scale);
+        const h = Math.max(4, column.h * state.view.scale);
+        ctx.fillRect(p.x - w / 2, p.y - h / 2, w, h);
+        ctx.strokeRect(p.x - w / 2, p.y - h / 2, w, h);
+      }
+      ctx.restore();
+    }
     if (state.snap) {
       const transform = makeTransform(state.view);
       const p = transform.toScreen(state.snap);
@@ -1000,9 +1098,12 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
       wall: s.layerVisibility.wall,
       opening: s.layerVisibility.opening,
       room: s.layerVisibility.room,
+      column: s.layerVisibility.column,
     };
     const selectedId =
-      s.selected && ['wall', 'opening', 'room'].includes(s.selected.kind) ? s.selected.id : null;
+      s.selected && ['wall', 'opening', 'room', 'column'].includes(s.selected.kind)
+        ? s.selected.id
+        : null;
     render(
       ctx,
       {
@@ -1183,15 +1284,46 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     });
   }
 
+  function columnMetric(column) {
+    if (!state.calibration) return `${Math.round(column.w)} × ${Math.round(column.h)} px`;
+    const pxPerMeter = state.calibration.pxPerMeter;
+    return `${((column.w / pxPerMeter) * 100).toFixed(0)} × ${((column.h / pxPerMeter) * 100).toFixed(0)} cm`;
+  }
+
+  function buildColumnList() {
+    els.columnList.textContent = '';
+    state.columns.forEach((column, index) => {
+      const item = document.createElement('li');
+      item.className = state.selected?.kind === 'column' && state.selected.id === column.id ? 'active' : '';
+      const idx = document.createElement('span');
+      idx.className = 'idx';
+      idx.textContent = `#${index + 1}`;
+      const remove = makeRemove(() => {
+        pushHistory();
+        state.columns = state.columns.filter((c) => c.id !== column.id);
+        if (state.selected?.id === column.id) state.selected = null;
+        afterChange();
+      });
+      const metric = document.createElement('span');
+      metric.className = 'metric';
+      metric.textContent = columnMetric(column);
+      item.append(idx, metric, remove);
+      item.addEventListener('click', () => selectElement('column', column.id));
+      els.columnList.append(item);
+    });
+  }
+
   function buildQuantitiesUi() {
     const q = computeQuantities(quantitiesInput());
     const rows = [];
     if (!q.calibrated) rows.push(['q-section', 'Not calibrated — set the scale first']);
     rows.push(['q-label', 'Useful area'], ['q-value', `${q.usefulArea.toFixed(2)} m²`]);
     rows.push(['q-label', 'Wall footprint'], ['q-value', `${q.wallArea.toFixed(2)} m²`]);
+    rows.push(['q-label', 'Column footprint'], ['q-value', `${q.columnArea.toFixed(2)} m²`]);
     rows.push(['q-label', 'Built area (est.)'], ['q-value', `${q.builtArea.toFixed(2)} m²`]);
     rows.push(['q-label', 'Wall length'], ['q-value', `${q.wallLength.toFixed(2)} m`]);
     rows.push(['q-label', 'Openings'], ['q-value', String(q.openingCount)]);
+    rows.push(['q-label', 'Columns'], ['q-value', String(q.columnCount)]);
     els.buildQuantities.textContent = '';
     for (const [cls, text] of rows) {
       const span = document.createElement('span');
@@ -1209,6 +1341,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     for (const [layer, toggle, section] of [
       ['wall', els.layerWallToggle, els.wallSection],
       ['opening', els.layerOpeningToggle, els.openingSection],
+      ['column', els.layerColumnToggle, els.columnSection],
       ['room', els.layerRoomToggle, els.roomSection],
     ]) {
       const visible = layerVisible(layer);
@@ -1224,7 +1357,8 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
       els.calibrateStatus.className = 'badge warn';
       els.calibrateStatus.textContent = 'Not calibrated';
     }
-    const count = state.walls.length + state.openings.length + state.rooms.length;
+    const count =
+      state.walls.length + state.openings.length + state.rooms.length + state.columns.length;
     els.panelCount.textContent = String(count);
     els.panelCount.hidden = count === 0;
     els.wallCount.textContent = String(state.walls.length);
@@ -1241,6 +1375,8 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     }
     els.openingCount.textContent = String(state.openings.length);
     buildOpeningList();
+    els.columnCount.textContent = String(state.columns.length);
+    buildColumnList();
     els.roomCount.textContent = String(state.rooms.length);
     buildRoomList();
     const q = computeQuantities(quantitiesInput());
@@ -1256,9 +1392,12 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     els.clearWallBtn.disabled = state.walls.length === 0;
     els.clearOpeningBtn.disabled = state.openings.length === 0;
     els.clearRoomBtn.disabled = state.rooms.length === 0;
-    const pendingCount = state.pendingWalls?.length || 0;
+    els.clearColumnBtn.disabled = state.columns.length === 0;
+    const pendingCount = (state.pendingWalls?.length || 0) + (state.pendingColumns?.length || 0);
     els.autoWallReview.hidden = pendingCount === 0;
-    if (pendingCount) els.autoWallInfo.textContent = `${pendingCount} walls proposed`;
+    if (pendingCount) {
+      els.autoWallInfo.textContent = `${state.pendingWalls?.length || 0} walls, ${state.pendingColumns?.length || 0} columns`;
+    }
     els.autoWallBtn.disabled = !state.source || !state.source.bitmap;
   }
 
@@ -1284,7 +1423,7 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     state.layerVisibility = { ...state.layerVisibility, [layer]: visible };
     project.settings.layers = state.layerVisibility;
     if (!visible && state.selected) {
-      const map = { wall: ['wall', 'node'], opening: ['opening'], room: ['room'] };
+      const map = { wall: ['wall', 'node'], opening: ['opening'], room: ['room'], column: ['column'] };
       if ((map[layer] || []).includes(state.selected.kind)) state.selected = null;
     }
     if (persist) afterChange();
@@ -1461,9 +1600,17 @@ export async function mountBuild({ project, save, getMeasureUnderlay }) {
     state.selected = null;
     afterChange();
   });
+  els.clearColumnBtn.addEventListener('click', () => {
+    if (!state.columns.length) return;
+    pushHistory();
+    state.columns = [];
+    state.selected = null;
+    afterChange();
+  });
   els.layerWallToggle.addEventListener('click', () => toggleLayer('wall'));
   els.layerOpeningToggle.addEventListener('click', () => toggleLayer('opening'));
   els.layerRoomToggle.addEventListener('click', () => toggleLayer('room'));
+  els.layerColumnToggle.addEventListener('click', () => toggleLayer('column'));
   els.exportBuildCsv.addEventListener('click', exportCsv);
   window.addEventListener('keydown', onKeyDown);
 

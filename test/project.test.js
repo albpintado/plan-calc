@@ -87,5 +87,12 @@ test('migrateLegacyRecord moves dimensions/areas to measure and walls/openings t
 });
 
 test('emptyBuildDoc has a fresh id counter', () => {
-  assert.deepEqual(emptyBuildDoc(), { nextId: 1, nodes: [], walls: [], openings: [], rooms: [] });
+  assert.deepEqual(emptyBuildDoc(), {
+    nextId: 1,
+    nodes: [],
+    walls: [],
+    openings: [],
+    rooms: [],
+    columns: [],
+  });
 });

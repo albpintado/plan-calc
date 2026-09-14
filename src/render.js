@@ -157,6 +157,19 @@ function drawWall(ctx, transform, wall, thicknessPx, color, text, selected) {
   }
 }
 
+function drawColumn(ctx, transform, column, scale, color, selected) {
+  const p = transform.toScreen(column);
+  const w = Math.max(3, (column.w || 0) * scale);
+  const h = Math.max(3, (column.h || 0) * scale);
+  ctx.save();
+  ctx.fillStyle = selected ? COLORS.areaActiveFill : COLORS.wallFill;
+  ctx.strokeStyle = selected ? COLORS.measureActive : color;
+  ctx.lineWidth = selected ? 3 : 2;
+  ctx.fillRect(p.x - w / 2, p.y - h / 2, w, h);
+  ctx.strokeRect(p.x - w / 2, p.y - h / 2, w, h);
+  ctx.restore();
+}
+
 function drawOpening(ctx, transform, opening, color, text, selected) {
   const a = transform.toScreen(opening.a);
   const b = transform.toScreen(opening.b);
@@ -402,6 +415,13 @@ export function render(ctx, state, canvasWidth, canvasHeight, options = {}) {
       const mm = pxToMm(distance(wall.a, wall.b), pxPerMeter);
       const text = state.calibration ? formatDimension(mm) : 'no scale';
       drawWall(ctx, transform, wall, thicknessPx, selected ? COLORS.measureActive : COLORS.wall, text, selected);
+    }
+  }
+
+  if (layers.column) {
+    for (const column of state.columns || []) {
+      const selected = column.id === state.selectedId;
+      drawColumn(ctx, transform, column, state.view.scale, COLORS.wall, selected);
     }
   }
 

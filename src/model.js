@@ -90,6 +90,13 @@ export function computeQuantities(state) {
     wallsByType.set(wall.type, entry);
   }
 
+  const columns = (state.columns || []).map((column) => {
+    const width = meters(column.w || 0);
+    const height = meters(column.h || 0);
+    return { id: column.id, width, height, area: width * height };
+  });
+  const columnArea = columns.reduce((sum, column) => sum + column.area, 0);
+
   const openings = (state.openings || []).map((opening) => ({
     id: opening.id,
     type: opening.type || 'puerta',
@@ -109,13 +116,16 @@ export function computeQuantities(state) {
     measuredArea,
     usefulArea,
     wallArea,
-    builtArea: usefulArea + wallArea,
+    columnArea,
+    builtArea: usefulArea + wallArea + columnArea,
     wallLength,
     openingCount: openings.length,
     openingWidth,
+    columnCount: columns.length,
     spaces,
     walls,
     openings,
+    columns,
     roomsByType,
     wallsByType,
     openingsByType,
@@ -136,10 +146,12 @@ export function quantitiesToRows(quantities) {
   }
   add('Summary', 'Useful area', round(quantities.usefulArea), 'm2');
   add('Summary', 'Wall footprint', round(quantities.wallArea), 'm2');
+  add('Summary', 'Column footprint', round(quantities.columnArea), 'm2');
   add('Summary', 'Built area (estimated)', round(quantities.builtArea), 'm2');
   add('Summary', 'Measured area (all polygons)', round(quantities.measuredArea), 'm2');
   add('Summary', 'Wall length', round(quantities.wallLength), 'm');
   add('Summary', 'Openings', quantities.openingCount, 'count');
+  add('Summary', 'Columns', quantities.columnCount, 'count');
 
   for (const space of quantities.spaces) {
     add('Spaces', space.name || `Space ${space.id}`, round(space.area), 'm2');
@@ -155,6 +167,9 @@ export function quantitiesToRows(quantities) {
   }
   for (const [type, entry] of quantities.openingsByType) {
     add('Openings by type', openingType(type).label, entry.count, `count (${round(entry.width)} m)`);
+  }
+  for (const column of quantities.columns) {
+    add('Columns', `Column ${column.id}`, round(column.area), 'm2');
   }
   return rows;
 }

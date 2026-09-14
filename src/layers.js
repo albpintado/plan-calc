@@ -1,4 +1,4 @@
-export const LAYERS = ['measure', 'area', 'wall', 'opening', 'room'];
+export const LAYERS = ['measure', 'area', 'wall', 'opening', 'room', 'column'];
 
 export const DEFAULT_LAYER_VISIBILITY = {
   measure: true,
@@ -6,6 +6,7 @@ export const DEFAULT_LAYER_VISIBILITY = {
   wall: true,
   opening: true,
   room: true,
+  column: true,
 };
 
 export function resolveLayerVisibility(value) {
