@@ -549,6 +549,132 @@ export function mergeCollinear(segments, { nodeCell = 3, angleTolerance = 0.12 }
   }));
 }
 
+// Bridge collinear segments separated by a small gap (thinning often breaks a
+// straight wall into pieces around junctions or window jambs). A junction
+// endpoint anywhere in the gap blocks the bridge, so real openings survive.
+export function bridgeCollinear(segments, { gap = 8, offset = 4, angle = 0.1 } = {}) {
+  let list = segments.map((s) => ({ ...s, a: { ...s.a }, b: { ...s.b } }));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    outer: for (let i = 0; i < list.length; i += 1) {
+      for (let j = i + 1; j < list.length; j += 1) {
+        const s = list[i];
+        const t = list[j];
+        const dx = s.b.x - s.a.x;
+        const dy = s.b.y - s.a.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const ux = dx / length;
+        const uy = dy / length;
+        const sAngle = Math.atan2(dy, dx);
+        if (segmentAngleDiff(sAngle, Math.atan2(t.b.y - t.a.y, t.b.x - t.a.x)) > angle) continue;
+        const perpendicular = (p) => Math.abs(-uy * (p.x - s.a.x) + ux * (p.y - s.a.y));
+        if (perpendicular(t.a) > offset || perpendicular(t.b) > offset) continue;
+        const project = (p) => ux * (p.x - s.a.x) + uy * (p.y - s.a.y);
+        const i0 = Math.min(project(s.a), project(s.b));
+        const i1 = Math.max(project(s.a), project(s.b));
+        const j0 = Math.min(project(t.a), project(t.b));
+        const j1 = Math.max(project(t.a), project(t.b));
+        const separation = j0 > i1 ? j0 - i1 : i0 > j1 ? i0 - j1 : 0;
+        if (separation > gap) continue;
+        const lo = Math.min(i0, j0);
+        const hi = Math.max(i1, j1);
+        let blocked = false;
+        for (let k = 0; k < list.length && !blocked; k += 1) {
+          if (k === i || k === j) continue;
+          for (const p of [list[k].a, list[k].b]) {
+            const q = project(p);
+            if (q > lo + 1 && q < hi - 1 && perpendicular(p) <= offset + Math.max(s.thickness, t.thickness) * 0.5) {
+              blocked = true;
+              break;
+            }
+          }
+        }
+        if (blocked) continue;
+        const thickness =
+          (s.thickness * (i1 - i0) + t.thickness * (j1 - j0)) / ((i1 - i0) + (j1 - j0) || 1);
+        list = list.filter((_, k) => k !== i && k !== j);
+        list.push({
+          a: { x: s.a.x + ux * lo, y: s.a.y + uy * lo },
+          b: { x: s.a.x + ux * hi, y: s.a.y + uy * hi },
+          thickness,
+        });
+        changed = true;
+        break outer;
+      }
+    }
+  }
+  return list;
+}
+
+// Columns are compact regions noticeably thicker than the surrounding wall:
+// opening the mask with a disk larger than the wall half-width leaves only
+// their cores. The wall half-width is estimated from the upper tail of the
+// distance transform along the skeleton (thin lines are the noise floor).
+export function detectColumns(dt, mask, skeleton, width, height, { maxSide = 140 } = {}) {
+  const samples = [];
+  for (let i = 0; i < skeleton.length; i += 1) if (skeleton[i]) samples.push(dt[i]);
+  samples.sort((a, b) => a - b);
+  const wallHalf = samples.length ? samples[Math.floor(samples.length * 0.9)] : 0;
+  const radius = Math.round(wallHalf) + 1;
+  if (radius < 3) return [];
+
+  const core = new Uint8Array(width * height);
+  for (let i = 0; i < core.length; i += 1) if (mask[i] && dt[i] > radius) core[i] = 1;
+
+  const labels = new Int32Array(width * height).fill(-1);
+  const stack = new Int32Array(width * height);
+  const columns = [];
+  for (let start = 0; start < core.length; start += 1) {
+    if (!core[start] || labels[start] !== -1) continue;
+    const label = start;
+    let top = 0;
+    stack[top] = start;
+    top += 1;
+    labels[start] = label;
+    let minX = width;
+    let minY = height;
+    let maxX = 0;
+    let maxY = 0;
+    let sumX = 0;
+    let sumY = 0;
+    let size = 0;
+    let maxDt = 0;
+    while (top > 0) {
+      top -= 1;
+      const idx = stack[top];
+      const x = idx % width;
+      const y = (idx / width) | 0;
+      size += 1;
+      sumX += x;
+      sumY += y;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      if (dt[idx] > maxDt) maxDt = dt[idx];
+      for (let k = 0; k < 4; k += 1) {
+        const nx = x + NEIGHBORS[k * 2][0];
+        const ny = y + NEIGHBORS[k * 2][1];
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const nIdx = ny * width + nx;
+        if (core[nIdx] && labels[nIdx] === -1) {
+          labels[nIdx] = label;
+          stack[top] = nIdx;
+          top += 1;
+        }
+      }
+    }
+    const w = maxX - minX + 1;
+    const h = maxY - minY + 1;
+    const ratio = Math.max(w, h) / Math.max(1, Math.min(w, h));
+    const side = Math.round(maxDt * 2);
+    if (size < 15 || ratio > 2.8 || Math.min(w, h) < 4 || side > maxSide) continue;
+    columns.push({ x: sumX / size, y: sumY / size, w: side, h: side });
+  }
+  return columns;
+}
+
 // ---------------------------------------------------------------------------
 // Top level
 // ---------------------------------------------------------------------------
@@ -566,6 +692,8 @@ export function extractWalls(image, options = {}) {
     minWallThickness = 4,
     minWallLength = 12,
     minBranch = 5,
+    columnMaxSide = 140,
+    bridgeGap = 8,
   } = options;
 
   const gray = options.gray || toGray(image);
@@ -576,9 +704,10 @@ export function extractWalls(image, options = {}) {
   });
   const dt = distanceTransform(mask, width, height);
   const skeleton = pruneSkeleton(skeletonize(mask, width, height), width, height, minBranch);
+  const columns = detectColumns(dt, mask, skeleton, width, height, { maxSide: columnMaxSide });
   const paths = traceSkeleton(skeleton, width, height);
 
-  const segments = [];
+  let segments = [];
   for (const path of paths) {
     const simplified = simplifyPath(path, simplifyTolerance).map((p) => ({ x: p.x, y: p.y }));
     for (let i = 0; i < simplified.length - 1; i += 1) {
@@ -592,15 +721,33 @@ export function extractWalls(image, options = {}) {
     }
   }
 
-  const merged = mergeCollinear(segments, { nodeCell });
+  const insideColumn = (point) =>
+    columns.some(
+      (column) =>
+        Math.abs(point.x - column.x) <= column.w / 2 && Math.abs(point.y - column.y) <= column.h / 2,
+    );
+  if (columns.length) {
+    segments = segments.filter((segment) => {
+      const mid = { x: (segment.a.x + segment.b.x) / 2, y: (segment.a.y + segment.b.y) / 2 };
+      return !insideColumn(mid);
+    });
+  }
+
+  const bridged = bridgeCollinear(segments, { gap: bridgeGap });
+  const merged = mergeCollinear(bridged, { nodeCell });
   const final = merged.filter(
     (segment) =>
       Math.hypot(segment.b.x - segment.a.x, segment.b.y - segment.a.y) >= minWallLength &&
-      segment.thickness >= minWallThickness,
+      segment.thickness >= minWallThickness &&
+      !insideColumn({
+        x: (segment.a.x + segment.b.x) / 2,
+        y: (segment.a.y + segment.b.y) / 2,
+      }),
   );
 
   return {
     segments: final,
+    columns,
     stats: {
       width,
       height,
@@ -608,6 +755,7 @@ export function extractWalls(image, options = {}) {
       keptComponents: kept,
       rawSegments: segments.length,
       segments: final.length,
+      columns: columns.length,
     },
   };
 }

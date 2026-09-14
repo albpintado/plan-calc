@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   binarize,
+  bridgeCollinear,
   distanceTransform,
   extractWalls,
   mergeCollinear,
@@ -130,6 +131,48 @@ test('extractWalls finds the centre-lines of a thick rectangular room', () => {
   assert.ok(Math.max(...lengths) > 150);
 });
 
+test('bridgeCollinear joins collinear segments across a small gap', () => {
+  const bridged = bridgeCollinear(
+    [
+      { a: { x: 0, y: 0 }, b: { x: 10, y: 0 }, thickness: 8 },
+      { a: { x: 14, y: 0 }, b: { x: 30, y: 0 }, thickness: 8 },
+    ],
+    { gap: 6 },
+  );
+  assert.equal(bridged.length, 1);
+  assert.equal(bridged[0].a.x, 0);
+  assert.equal(bridged[0].b.x, 30);
+});
+
+test('bridgeCollinear does not cross a junction in the gap', () => {
+  const bridged = bridgeCollinear(
+    [
+      { a: { x: 0, y: 0 }, b: { x: 10, y: 0 }, thickness: 8 },
+      { a: { x: 14, y: 0 }, b: { x: 30, y: 0 }, thickness: 8 },
+      { a: { x: 12, y: 0 }, b: { x: 12, y: 20 }, thickness: 8 },
+    ],
+    { gap: 6 },
+  );
+  assert.equal(bridged.length, 3);
+});
+
+test('extractWalls detects a square pillar as a column, not diagonals', () => {
+  const image = makeImage(240, 180, ({ fill }) => {
+    fill(20, 86, 200, 8, 20);
+    fill(106, 76, 28, 28, 20);
+  });
+  const result = extractWalls(image, { thresholdWindow: 41 });
+  assert.ok(result.columns.length >= 1, 'pillar should be detected as a column');
+  const pillar = result.columns[0];
+  for (const segment of result.segments) {
+    const midX = (segment.a.x + segment.b.x) / 2;
+    const midY = (segment.a.y + segment.b.y) / 2;
+    const inside =
+      Math.abs(midX - pillar.x) <= pillar.w / 2 && Math.abs(midY - pillar.y) <= pillar.h / 2;
+    assert.ok(!inside, 'no wall segment should cross the pillar');
+  }
+});
+
 test('extractWalls ignores an isolated dark blob (furniture)', () => {
   const image = makeImage(240, 180, ({ fill }) => {
     fill(30, 30, 180, 120, 255);
@@ -160,4 +203,5 @@ test('extractWalls is deterministic', () => {
   const a = extractWalls(image, { thresholdWindow: 41 });
   const b = extractWalls(image, { thresholdWindow: 41 });
   assert.deepEqual(a.segments, b.segments);
+  assert.deepEqual(a.columns, b.columns);
 });
